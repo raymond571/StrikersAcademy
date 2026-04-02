@@ -1,24 +1,28 @@
 import { useState, FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
+import { Link, useNavigate, Navigate } from 'react-router-dom';
+import { useAuth, getHomeRoute } from '../hooks/useAuth';
 import { Layout } from '../components/layout/Layout';
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { user, isLoading, login } = useAuth();
   const navigate = useNavigate();
-
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Already logged in — redirect based on role (after all hooks)
+  if (!isLoading && user) {
+    return <Navigate to={getHomeRoute(user.role)} replace />;
+  }
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
     setIsSubmitting(true);
     try {
-      await login(phone, password);
-      navigate('/dashboard');
+      const loggedInUser = await login(phone, password);
+      navigate(getHomeRoute(loggedInUser.role));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {

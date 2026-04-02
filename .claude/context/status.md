@@ -3,7 +3,7 @@ _Maintained by Shakespeare. Reflects actual code state, not plans._
 _Last updated: 2026-04-02_
 
 ## Overall phase
-**Phase 3 complete. Foundation + Auth + Facility + Booking + Payment APIs done. Admin panel and frontend integration remain.**
+**Phase 4 complete. Admin panel fully implemented — all 12 endpoints live, 6-tab frontend wired with live data.**
 
 ---
 
@@ -43,9 +43,11 @@ _Last updated: 2026-04-02_
 - [x] Dashboard page (shell — UI ready, depends on booking API)
 - [x] Booking page (shell — UI flow complete, depends on facility/booking API)
 - [x] Payment page (Razorpay integration wired, depends on payment API)
-- [x] Admin page (placeholder only)
+- [x] Admin page (6-tab panel: Dashboard, Bookings, Users, Slots, Revenue, Coupons)
 - [x] `useBookings()` hook
-- [x] `services/api.ts` — all API client methods defined (authApi, facilityApi, bookingApi, paymentApi)
+- [x] `services/api.ts` — all API client methods defined (authApi, facilityApi, bookingApi, paymentApi, adminApi)
+- [x] Login/Register redirect: already-logged-in users redirect by role (ADMIN→/admin, others→/dashboard)
+- [x] `useAuth().login()` returns User object for role-based redirect
 
 ### Facility API (COMPLETE)
 - [x] `FacilityService` — listActive, getById, getSlots (capacity-based availability + AvailabilityBlock checking), create, update
@@ -71,28 +73,18 @@ _Last updated: 2026-04-02_
 
 ---
 
-## What is STUB (route exists, returns 501)
-
-### Admin API (all 12 endpoints are stubs)
-- [ ] `GET /api/admin/dashboard`
-- [ ] `GET /api/admin/bookings` (with filters)
-- [ ] `POST /api/admin/bookings` (manual booking)
-- [ ] `PATCH /api/admin/bookings/:id/status`
-- [ ] `GET /api/admin/users`
-- [ ] `POST /api/admin/slots/bulk`
-- [ ] `POST /api/admin/slots/block`
-- [ ] `DELETE /api/admin/slots/block/:id`
-- [ ] `GET /api/admin/reports/revenue`
-- [ ] `GET /api/admin/coupons`
-- [ ] `POST /api/admin/coupons`
-- [ ] `PATCH /api/admin/coupons/:id`
+### Admin API (COMPLETE — Phase 4)
+- [x] `AdminService` — dashboard, listBookings, createManualBooking, updateBookingStatus, listUsers, bulkCreateSlots, blockSlots, removeBlock, revenueReport, listCoupons, createCoupon, updateCoupon
+- [x] `AdminController` — Zod validation for all 12 endpoints
+- [x] All 12 admin routes wired to AdminController (no stubs)
+- [x] Admin frontend: 6 tab components in `components/admin/`
+- [x] `adminApi` added to `services/api.ts` — all 12 admin methods + local types
 
 ---
 
 ## What is NOT started
 
 ### Business logic (controllers + services)
-- [ ] `AdminController` — not created
 - [ ] Waitlist promotion logic (when booking cancels → promote waitlist)
 - [ ] Coupon validation logic
 - [ ] Pricing rule resolution logic
@@ -102,7 +94,6 @@ _Last updated: 2026-04-02_
 - [ ] Initial migration run
 
 ### Frontend
-- [ ] Admin panel — all functional sections (booking management, facility CRUD, slot creation, user list)
 - [ ] Landing page dynamic content (from `ContentBlock` model)
 - [ ] Gallery page / section
 - [ ] Coupon code input on booking flow

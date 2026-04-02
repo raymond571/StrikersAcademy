@@ -1,9 +1,9 @@
 import { Navigate, Outlet } from 'react-router-dom';
-import { useAuth } from '../../hooks/useAuth';
+import { useAuth, isAdminRole } from '../../hooks/useAuth';
 
 /**
- * Wraps routes that require ADMIN role.
- * Redirects to /dashboard if authenticated but not admin.
+ * Wraps routes that require admin-level access (ADMIN or STAFF).
+ * Redirects to /dashboard if authenticated but not an admin role.
  */
 export function AdminRoute() {
   const { user, isLoading } = useAuth();
@@ -20,7 +20,7 @@ export function AdminRoute() {
     return <Navigate to="/login" replace />;
   }
 
-  if (user.role !== 'ADMIN') {
+  if (!isAdminRole(user.role)) {
     return <Navigate to="/dashboard" replace />;
   }
 

@@ -10,14 +10,14 @@ import { success } from '../utils/response';
 
 const createSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100),
-  type: z.enum(['NET', 'TURF']),
+  type: z.string().min(1, 'Type is required').max(50),
   description: z.string().max(500).optional(),
   pricePerSlot: z.number().int().min(0, 'Price must be non-negative'),
 });
 
 const updateSchema = z.object({
   name: z.string().min(1).max(100).optional(),
-  type: z.enum(['NET', 'TURF']).optional(),
+  type: z.string().min(1).max(50).optional(),
   description: z.string().max(500).optional(),
   pricePerSlot: z.number().int().min(0).optional(),
   isActive: z.boolean().optional(),

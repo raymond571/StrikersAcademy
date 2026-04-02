@@ -84,18 +84,18 @@ All routes require `authenticate`. Role notes per route.
 
 | Method | Path | Auth | Status | Notes |
 |---|---|---|---|---|
-| GET | `/api/admin/dashboard` | ADMIN or STAFF | STUB | Summary stats: bookings, revenue, facilities |
-| GET | `/api/admin/bookings` | ADMIN or STAFF | STUB | Query: `?status=&date=&facilityId=&page=&limit=` |
-| POST | `/api/admin/bookings` | ADMIN or STAFF | STUB | Manual booking for any user |
-| PATCH | `/api/admin/bookings/:id/status` | ADMIN or STAFF | STUB | Approve / reject / refund |
-| GET | `/api/admin/users` | ADMIN or STAFF | STUB | List all registered users |
-| POST | `/api/admin/slots/bulk` | ADMIN only | STUB | Body: `{ facilityId, startDate, endDate, timeSlots, capacity? }` |
-| POST | `/api/admin/slots/block` | ADMIN or STAFF | STUB | Body: `{ facilityId?, date, startTime?, endTime?, reason }` |
-| DELETE | `/api/admin/slots/block/:id` | ADMIN or STAFF | STUB | Remove availability block |
-| GET | `/api/admin/reports/revenue` | ADMIN only | STUB | Query: `?from=YYYY-MM-DD&to=YYYY-MM-DD` |
-| GET | `/api/admin/coupons` | ADMIN only | STUB | List all coupons |
-| POST | `/api/admin/coupons` | ADMIN only | STUB | Create coupon |
-| PATCH | `/api/admin/coupons/:id` | ADMIN only | STUB | Update/deactivate coupon |
+| GET | `/api/admin/dashboard` | ADMIN or STAFF | DONE | Returns `{ stats: { totalBookings, confirmedBookings, todayBookings, activeFacilities, totalUsers, totalRevenue } }` |
+| GET | `/api/admin/bookings` | ADMIN or STAFF | DONE | Query: `?status=&date=&facilityId=&page=&limit=`. Paginated. Includes user, slot+facility, payment. |
+| POST | `/api/admin/bookings` | ADMIN or STAFF | DONE | Body: `{ userId, slotId, bookingFor?, playerName?, teamName?, paymentMethod?, notes? }`. Sets createdById. OFFLINE auto-confirms. |
+| PATCH | `/api/admin/bookings/:id/status` | ADMIN or STAFF | DONE | Body: `{ status, notes? }`. Syncs payment: REFUNDED→payment REFUNDED, CANCELLED+PENDING→FAILED. |
+| GET | `/api/admin/users` | ADMIN or STAFF | DONE | Query: `?page=&limit=`. Returns users with `_count.bookings`. |
+| POST | `/api/admin/slots/bulk` | ADMIN only | DONE | Body: `{ facilityId, startDate, endDate, timeSlots: [{startTime, endTime}], capacity? }`. Skips duplicates. Returns `{ created, skipped }`. |
+| POST | `/api/admin/slots/block` | ADMIN or STAFF | DONE | Body: `{ facilityId?, date, startTime?, endTime?, reason }`. Sets createdById from JWT. |
+| DELETE | `/api/admin/slots/block/:id` | ADMIN or STAFF | DONE | Removes availability block. 404 if not found. |
+| GET | `/api/admin/reports/revenue` | ADMIN only | DONE | Query: `?from=YYYY-MM-DD&to=YYYY-MM-DD`. Daily breakdown with online/offline split. Only SUCCESS payments. |
+| GET | `/api/admin/coupons` | ADMIN only | DONE | Returns all coupons sorted by createdAt desc. |
+| POST | `/api/admin/coupons` | ADMIN only | DONE | Body: `{ code, description?, discountType, discountValue, maxUsage?, validFrom, validUntil? }`. Uppercases code. 409 on duplicate. |
+| PATCH | `/api/admin/coupons/:id` | ADMIN only | DONE | Body: `{ description?, discountValue?, maxUsage?, validUntil?, isActive? }`. 404 if not found. |
 
 ---
 

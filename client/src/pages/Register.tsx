@@ -1,12 +1,11 @@
 import { useState, FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
+import { Link, useNavigate, Navigate } from 'react-router-dom';
+import { useAuth, getHomeRoute } from '../hooks/useAuth';
 import { Layout } from '../components/layout/Layout';
 
 export default function RegisterPage() {
-  const { register } = useAuth();
+  const { user, isLoading, register } = useAuth();
   const navigate = useNavigate();
-
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -17,6 +16,11 @@ export default function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Already logged in — redirect based on role (after all hooks)
+  if (!isLoading && user) {
+    return <Navigate to={getHomeRoute(user.role)} replace />;
+  }
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
@@ -26,14 +30,14 @@ export default function RegisterPage() {
     setError(null);
     setIsSubmitting(true);
     try {
-      await register({
+      const registeredUser = await register({
         name: form.name,
         email: form.email,
         phone: form.phone,
         age: parseInt(form.age, 10),
         password: form.password,
       });
-      navigate('/dashboard');
+      navigate(getHomeRoute(registeredUser.role));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Registration failed');
     } finally {

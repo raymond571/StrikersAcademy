@@ -5,13 +5,32 @@ import React, {
   useEffect,
   useCallback,
 } from 'react';
-import type { User } from '@strikers/shared';
+import type { User, UserRole } from '@strikers/shared';
 import { authApi } from '../services/api';
+
+/**
+ * Single source of truth for role-based home route.
+ * Add new roles here as needed — every redirect in the app uses this.
+ */
+const ROLE_HOME: Record<string, string> = {
+  ADMIN: '/admin',
+  STAFF: '/admin',
+};
+const DEFAULT_HOME = '/dashboard';
+
+export function getHomeRoute(role?: UserRole | string): string {
+  return (role && ROLE_HOME[role]) || DEFAULT_HOME;
+}
+
+/** Roles that can access the admin panel */
+export function isAdminRole(role?: string): boolean {
+  return role === 'ADMIN' || role === 'STAFF';
+}
 
 interface AuthContextValue {
   user: User | null;
   isLoading: boolean;
-  login: (phone: string, password: string) => Promise<void>;
+  login: (phone: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
   register: (data: {
     name: string;
@@ -19,7 +38,7 @@ interface AuthContextValue {
     phone: string;
     age: number;
     password: string;
-  }) => Promise<void>;
+  }) => Promise<User>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -40,6 +59,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(async (phone: string, password: string) => {
     const { user } = await authApi.login(phone, password);
     setUser(user);
+    return user;
   }, []);
 
   const logout = useCallback(async () => {
@@ -51,6 +71,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (data: { name: string; email: string; phone: string; age: number; password: string }) => {
       const { user } = await authApi.register(data);
       setUser(user);
+      return user;
     },
     [],
   );

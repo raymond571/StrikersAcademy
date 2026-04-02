@@ -56,6 +56,37 @@ export const PaymentService = {
   },
 
   /**
+   * Issue a full refund for a Razorpay payment.
+   * @param paymentId - Razorpay payment ID (pay_xxx)
+   * @param amountPaise - Amount to refund in paise (full refund if omitted)
+   */
+  async refund(paymentId: string, amountPaise?: number) {
+    const instance = getRazorpay();
+    const refund = await (instance.payments as any).refund(paymentId, {
+      ...(amountPaise ? { amount: amountPaise } : {}),
+    });
+    return refund;
+  },
+
+  /**
+   * Fetch payment details from Razorpay for cross-verification.
+   * @param paymentId - Razorpay payment ID (pay_xxx)
+   */
+  async fetchPayment(paymentId: string) {
+    const instance = getRazorpay();
+    return (instance.payments as any).fetch(paymentId);
+  },
+
+  /**
+   * Fetch all payments for an order from Razorpay.
+   * @param orderId - Razorpay order ID (order_xxx)
+   */
+  async fetchOrderPayments(orderId: string) {
+    const instance = getRazorpay();
+    return instance.orders.fetchPayments(orderId);
+  },
+
+  /**
    * Verify webhook payload signature.
    */
   verifyWebhookSignature(rawBody: string, signature: string): boolean {
