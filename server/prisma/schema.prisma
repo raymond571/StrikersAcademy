@@ -1,0 +1,135 @@
+// StrikersAcademy — Prisma Schema
+// Database: SQLite (dev) — swap to PostgreSQL for production scale if needed
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// User
+// ─────────────────────────────────────────────────────────────
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  phone     String   @unique
+  password  String   // bcrypt hashed
+  role      Role     @default(CUSTOMER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookings Booking[]
+
+  @@map("users")
+}
+
+enum Role {
+  ADMIN
+  CUSTOMER
+}
+
+// ─────────────────────────────────────────────────────────────
+// Facility (Net lane or Turf wicket)
+// ─────────────────────────────────────────────────────────────
+model Facility {
+  id           String       @id @default(cuid())
+  name         String       // e.g. "Net Lane 1", "Turf Pitch A"
+  type         FacilityType
+  description  String       @default("")
+  pricePerSlot Int          // stored in paise (₹500 = 50000 paise)
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  slots Slot[]
+
+  @@map("facilities")
+}
+
+enum FacilityType {
+  NET
+  TURF
+}
+
+// ─────────────────────────────────────────────────────────────
+// Slot (a specific time window at a facility on a given date)
+// ─────────────────────────────────────────────────────────────
+model Slot {
+  id          String   @id @default(cuid())
+  facilityId  String
+  date        String   // ISO date: YYYY-MM-DD (stored as string for SQLite simplicity)
+  startTime   String   // 24h: HH:MM
+  endTime     String   // 24h: HH:MM
+  isAvailable Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  facility Facility  @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  bookings Booking[]
+
+  // Prevent double-booking the same slot at the same facility/date/time
+  @@unique([facilityId, date, startTime])
+  @@index([date, isAvailable])
+  @@index([facilityId, date])
+  @@map("slots")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Booking
+// ─────────────────────────────────────────────────────────────
+model Booking {
+  id        String        @id @default(cuid())
+  userId    String
+  slotId    String
+  status    BookingStatus @default(PENDING)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  slot    Slot     @relation(fields: [slotId], references: [id], onDelete: Restrict)
+  payment Payment?
+
+  @@index([userId])
+  @@index([slotId])
+  @@index([status])
+  @@map("bookings")
+}
+
+enum BookingStatus {
+  PENDING    // Created, awaiting payment
+  CONFIRMED  // Payment successful
+  CANCELLED  // Cancelled by user or admin
+}
+
+// ─────────────────────────────────────────────────────────────
+// Payment (Razorpay)
+// ─────────────────────────────────────────────────────────────
+model Payment {
+  id                String        @id @default(cuid())
+  bookingId         String        @unique
+  amount            Int           // in paise
+  currency          String        @default("INR")
+  razorpayOrderId   String        @unique
+  razorpayPaymentId String?       // set after successful payment
+  razorpaySignature String?       // verified signature stored for audit
+  status            PaymentStatus @default(PENDING)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([razorpayOrderId])
+  @@map("payments")
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
