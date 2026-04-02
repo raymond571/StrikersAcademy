@@ -35,13 +35,28 @@ model User {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Facility Type (dynamically managed by admin)
+// ─────────────────────────────────────────────────────────────
+model FacilityType {
+  id          String   @id @default(cuid())
+  name        String   @unique              // e.g. "NET", "TURF", "BOWLING_MACHINE"
+  label       String                        // Display name: "Net Lane", "Turf Pitch"
+  description String   @default("")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("facility_types")
+}
+
+// ─────────────────────────────────────────────────────────────
 // Facility (Net lane or Turf wicket)
-// type values: "NET" | "TURF"
+// type references FacilityType.name
 // ─────────────────────────────────────────────────────────────
 model Facility {
   id           String   @id @default(cuid())
   name         String                          // e.g. "Net Lane 1", "Turf Pitch A"
-  type         String                          // FacilityType: "NET" | "TURF"
+  type         String                          // References FacilityType.name
   description  String   @default("")
   pricePerSlot Int                             // stored in paise (₹500 = 50000 paise)
   isActive     Boolean  @default(true)

@@ -3,6 +3,7 @@
  * All booking creation uses a Prisma interactive transaction to prevent race conditions.
  */
 import { PrismaClient } from '@prisma/client';
+import { PaymentService } from './payment.service';
 
 /** Throw an HTTP-aware error */
 function httpError(message: string, statusCode: number): never {
@@ -232,8 +233,16 @@ export const BookingService = {
         },
       });
 
-      // Mark payment for refund if it was paid online
-      if (updated.payment && updated.payment.status === 'SUCCESS') {
+      // Refund via Razorpay if it was paid online
+      if (updated.payment && updated.payment.status === 'SUCCESS' && updated.payment.razorpayPaymentId) {
+        try {
+          await PaymentService.refund(updated.payment.razorpayPaymentId, updated.payment.amount);
+        } catch (err: unknown) {
+          const msg = (err as { error?: { description?: string } })?.error?.description
+            || (err as Error)?.message || 'Razorpay refund failed';
+          httpError(`Refund failed: ${msg}`, 502);
+        }
+
         await tx.payment.update({
           where: { id: updated.payment.id },
           data: { status: 'REFUNDED', refundedAt: new Date() },

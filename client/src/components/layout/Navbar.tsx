@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../../hooks/useAuth';
+import { useAuth, isAdminRole } from '../../hooks/useAuth';
 
 export function Navbar() {
   const { user, logout } = useAuth();
@@ -37,7 +37,7 @@ export function Navbar() {
                 >
                   Book a Slot
                 </Link>
-                {user.role === 'ADMIN' && (
+                {isAdminRole(user.role) && (
                   <Link
                     to="/admin"
                     className="text-sm font-medium text-brand-600 hover:text-brand-700"
