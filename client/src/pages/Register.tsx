@@ -11,6 +11,7 @@ export default function RegisterPage() {
     name: '',
     email: '',
     phone: '',
+    age: '',
     password: '',
   });
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +26,13 @@ export default function RegisterPage() {
     setError(null);
     setIsSubmitting(true);
     try {
-      await register(form);
+      await register({
+        name: form.name,
+        email: form.email,
+        phone: form.phone,
+        age: parseInt(form.age, 10),
+        password: form.password,
+      });
       navigate('/dashboard');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Registration failed');
@@ -84,8 +91,24 @@ export default function RegisterPage() {
               type="tel"
               className="input"
               placeholder="9876543210"
-              pattern="[0-9]{10}"
+              pattern="[6-9][0-9]{9}"
               value={form.phone}
+              onChange={handleChange}
+              required
+            />
+          </div>
+
+          <div>
+            <label htmlFor="age" className="label">Age</label>
+            <input
+              id="age"
+              name="age"
+              type="number"
+              className="input"
+              placeholder="22"
+              min={5}
+              max={120}
+              value={form.age}
               onChange={handleChange}
               required
             />
@@ -98,8 +121,8 @@ export default function RegisterPage() {
               name="password"
               type="password"
               className="input"
-              placeholder="Min 8 characters"
-              minLength={8}
+              placeholder="Min 6 characters"
+              minLength={6}
               value={form.password}
               onChange={handleChange}
               required

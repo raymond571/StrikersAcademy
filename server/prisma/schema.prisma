@@ -1,5 +1,7 @@
 // StrikersAcademy — Prisma Schema
-// Database: SQLite (dev) — swap to PostgreSQL for production scale if needed
+// Database: SQLite (dev) — swap to PostgreSQL for production
+// Note: SQLite does not support native enums. All enum-like fields use String
+// with runtime validation. Values are documented as string literals below.
 
 generator client {
   provider = "prisma-client-js"
@@ -12,114 +14,144 @@ datasource db {
 
 // ─────────────────────────────────────────────────────────────
 // User
+// Role values: "ADMIN" | "STAFF" | "CUSTOMER"
 // ─────────────────────────────────────────────────────────────
 model User {
   id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  phone     String   @unique
-  password  String   // bcrypt hashed
-  role      Role     @default(CUSTOMER)
+  name      String                        // mandatory — full name
+  email     String   @unique              // mandatory — used for future recovery (OTP)
+  phone     String   @unique              // mandatory — primary login identifier (phone + password)
+  age       Int                           // mandatory — user's age
+  password  String                        // scrypt hashed (see utils/password.ts)
+  role      String   @default("CUSTOMER") // Role: "ADMIN" | "STAFF" | "CUSTOMER"
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  bookings Booking[]
+  bookings        Booking[]
+  waitlistEntries WaitlistEntry[]
+  manualBookings  Booking[]       @relation("ManualBookingCreator")
 
   @@map("users")
 }
 
-enum Role {
-  ADMIN
-  CUSTOMER
-}
-
 // ─────────────────────────────────────────────────────────────
 // Facility (Net lane or Turf wicket)
+// type values: "NET" | "TURF"
 // ─────────────────────────────────────────────────────────────
 model Facility {
-  id           String       @id @default(cuid())
-  name         String       // e.g. "Net Lane 1", "Turf Pitch A"
-  type         FacilityType
-  description  String       @default("")
-  pricePerSlot Int          // stored in paise (₹500 = 50000 paise)
-  isActive     Boolean      @default(true)
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  id           String   @id @default(cuid())
+  name         String                          // e.g. "Net Lane 1", "Turf Pitch A"
+  type         String                          // FacilityType: "NET" | "TURF"
+  description  String   @default("")
+  pricePerSlot Int                             // stored in paise (₹500 = 50000 paise)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  slots Slot[]
+  slots              Slot[]
+  availabilityBlocks AvailabilityBlock[]
 
   @@map("facilities")
-}
-
-enum FacilityType {
-  NET
-  TURF
 }
 
 // ─────────────────────────────────────────────────────────────
 // Slot (a specific time window at a facility on a given date)
 // ─────────────────────────────────────────────────────────────
 model Slot {
-  id          String   @id @default(cuid())
-  facilityId  String
-  date        String   // ISO date: YYYY-MM-DD (stored as string for SQLite simplicity)
-  startTime   String   // 24h: HH:MM
-  endTime     String   // 24h: HH:MM
-  isAvailable Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String   @id @default(cuid())
+  facilityId    String
+  date          String   // ISO date: YYYY-MM-DD (string for SQLite portability)
+  startTime     String   // 24h: HH:MM
+  endTime       String   // 24h: HH:MM
+  capacity      Int      @default(1) // max concurrent bookings allowed for this slot
+  priceOverride Int?     // paise — overrides facility.pricePerSlot when set
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  facility Facility  @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  facility Facility      @relation(fields: [facilityId], references: [id], onDelete: Cascade)
   bookings Booking[]
+  waitlist WaitlistEntry[]
 
-  // Prevent double-booking the same slot at the same facility/date/time
+  // One slot definition per facility/date/time combination
   @@unique([facilityId, date, startTime])
-  @@index([date, isAvailable])
+  @@index([date])
   @@index([facilityId, date])
   @@map("slots")
 }
 
 // ─────────────────────────────────────────────────────────────
 // Booking
+// status values: "PENDING" | "CONFIRMED" | "CANCELLED" | "WAITLISTED" | "REFUNDED"
+// bookingFor values: "SELF" | "CHILD" | "TEAM"
+// paymentMethod values: "ONLINE" | "OFFLINE"
 // ─────────────────────────────────────────────────────────────
 model Booking {
-  id        String        @id @default(cuid())
-  userId    String
-  slotId    String
-  status    BookingStatus @default(PENDING)
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+  id            String   @id @default(cuid())
+  userId        String
+  slotId        String
+  status        String   @default("PENDING")   // BookingStatus
+  bookingFor    String   @default("SELF")       // BookingFor: "SELF" | "CHILD" | "TEAM"
+  playerName    String?                          // name if booking for child
+  teamName      String?                          // team name if TEAM
+  paymentMethod String   @default("ONLINE")     // PaymentMethod: "ONLINE" | "OFFLINE"
+  createdById   String?                          // User.id of staff/admin who created this
+  couponId      String?
+  discountPaise Int?                             // actual discount applied
+  notes         String?                          // internal notes (admin use)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  user    User     @relation(fields: [userId], references: [id], onDelete: Restrict)
-  slot    Slot     @relation(fields: [slotId], references: [id], onDelete: Restrict)
-  payment Payment?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  slot      Slot     @relation(fields: [slotId], references: [id], onDelete: Restrict)
+  createdBy User?    @relation("ManualBookingCreator", fields: [createdById], references: [id])
+  coupon    Coupon?  @relation(fields: [couponId], references: [id])
+  payment   Payment?
 
   @@index([userId])
   @@index([slotId])
   @@index([status])
+  @@index([createdAt])
   @@map("bookings")
 }
 
-enum BookingStatus {
-  PENDING    // Created, awaiting payment
-  CONFIRMED  // Payment successful
-  CANCELLED  // Cancelled by user or admin
+// ─────────────────────────────────────────────────────────────
+// Waitlist
+// ─────────────────────────────────────────────────────────────
+model WaitlistEntry {
+  id        String   @id @default(cuid())
+  slotId    String
+  userId    String
+  position  Int      // 1-indexed queue position
+  createdAt DateTime @default(now())
+
+  slot Slot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([slotId, userId])
+  @@unique([slotId, position])
+  @@index([slotId])
+  @@map("waitlist_entries")
 }
 
 // ─────────────────────────────────────────────────────────────
-// Payment (Razorpay)
+// Payment (Razorpay + offline)
+// status values: "PENDING" | "SUCCESS" | "FAILED" | "REFUNDED"
+// method values: "ONLINE" | "OFFLINE"
 // ─────────────────────────────────────────────────────────────
 model Payment {
-  id                String        @id @default(cuid())
-  bookingId         String        @unique
-  amount            Int           // in paise
-  currency          String        @default("INR")
-  razorpayOrderId   String        @unique
-  razorpayPaymentId String?       // set after successful payment
-  razorpaySignature String?       // verified signature stored for audit
-  status            PaymentStatus @default(PENDING)
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  id                String    @id @default(cuid())
+  bookingId         String    @unique
+  amount            Int       // in paise (final amount after discount)
+  currency          String    @default("INR")
+  method            String    @default("ONLINE")  // PaymentMethod: "ONLINE" | "OFFLINE"
+  razorpayOrderId   String?   @unique             // null for offline payments
+  razorpayPaymentId String?                        // set after successful payment
+  razorpaySignature String?                        // verified signature stored for audit
+  status            String    @default("PENDING")  // PaymentStatus
+  paidAt            DateTime?
+  refundedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
@@ -127,9 +159,88 @@ model Payment {
   @@map("payments")
 }
 
-enum PaymentStatus {
-  PENDING
-  SUCCESS
-  FAILED
-  REFUNDED
+// ─────────────────────────────────────────────────────────────
+// Coupon / Discount
+// discountType values: "FIXED" | "PERCENT"
+// ─────────────────────────────────────────────────────────────
+model Coupon {
+  id            String   @id @default(cuid())
+  code          String   @unique
+  description   String   @default("")
+  discountType  String                   // DiscountType: "FIXED" | "PERCENT"
+  discountValue Int                      // paise for FIXED; basis points for PERCENT
+  maxUsage      Int?                     // null = unlimited
+  usedCount     Int      @default(0)
+  validFrom     DateTime
+  validUntil    DateTime?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  bookings Booking[]
+
+  @@map("coupons")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Pricing Rules (peak / off-peak / facility-type overrides)
+// facilityType values: "NET" | "TURF" | null (all types)
+// ─────────────────────────────────────────────────────────────
+model PricingRule {
+  id            String   @id @default(cuid())
+  name          String
+  facilityType  String?  // FacilityType or null = applies to all types
+  dayOfWeek     Int?     // 0=Sun … 6=Sat, null = all days
+  startTime     String?  // HH:MM — null = all day
+  endTime       String?  // HH:MM
+  priceOverride Int      // paise — the price when this rule matches
+  priority      Int      @default(0)  // higher priority takes precedence
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("pricing_rules")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Availability Blocks (rain / holiday / maintenance)
+// ─────────────────────────────────────────────────────────────
+model AvailabilityBlock {
+  id          String   @id @default(cuid())
+  facilityId  String?  // null = blocks all facilities
+  date        String   // YYYY-MM-DD
+  startTime   String?  // HH:MM — null = all day
+  endTime     String?  // HH:MM
+  reason      String   @default("Blocked")  // "Rain", "Holiday", "Maintenance"
+  createdById String
+  createdAt   DateTime @default(now())
+
+  facility Facility? @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+
+  @@index([date])
+  @@index([facilityId, date])
+  @@map("availability_blocks")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Content Management
+// ─────────────────────────────────────────────────────────────
+model ContentBlock {
+  id        String   @id @default(cuid())
+  key       String   @unique  // e.g. "hero_title", "about_text", "contact_phone"
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("content_blocks")
+}
+
+model GalleryImage {
+  id        String   @id @default(cuid())
+  url       String
+  caption   String   @default("")
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@map("gallery_images")
 }

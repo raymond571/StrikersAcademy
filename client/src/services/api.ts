@@ -37,14 +37,15 @@ export const authApi = {
     name: string;
     email: string;
     phone: string;
+    age: number;
     password: string;
   }): Promise<AuthResponse> {
     const res = await api.post<{ data: AuthResponse }>('/api/auth/register', data);
     return res.data.data;
   },
 
-  async login(email: string, password: string): Promise<AuthResponse> {
-    const res = await api.post<{ data: AuthResponse }>('/api/auth/login', { email, password });
+  async login(phone: string, password: string): Promise<AuthResponse> {
+    const res = await api.post<{ data: AuthResponse }>('/api/auth/login', { phone, password });
     return res.data.data;
   },
 

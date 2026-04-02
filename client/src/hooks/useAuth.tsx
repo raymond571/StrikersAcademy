@@ -11,12 +11,13 @@ import { authApi } from '../services/api';
 interface AuthContextValue {
   user: User | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (phone: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   register: (data: {
     name: string;
     email: string;
     phone: string;
+    age: number;
     password: string;
   }) => Promise<void>;
 }
@@ -36,8 +37,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .finally(() => setIsLoading(false));
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const { user } = await authApi.login(email, password);
+  const login = useCallback(async (phone: string, password: string) => {
+    const { user } = await authApi.login(phone, password);
     setUser(user);
   }, []);
 
@@ -47,7 +48,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const register = useCallback(
-    async (data: { name: string; email: string; phone: string; password: string }) => {
+    async (data: { name: string; email: string; phone: string; age: number; password: string }) => {
       const { user } = await authApi.register(data);
       setUser(user);
     },

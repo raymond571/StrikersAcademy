@@ -3,15 +3,19 @@ export type PaymentStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'REFUNDED';
 export interface Payment {
   id: string;
   bookingId: string;
-  /** Amount in paise (e.g., 50000 = ₹500) */
+  /** Amount in paise after discount (e.g., 50000 = ₹500) */
   amount: number;
-  razorpayOrderId: string;
+  /** "ONLINE" | "OFFLINE" */
+  method: string;
+  razorpayOrderId: string | null;
   razorpayPaymentId: string | null;
   status: PaymentStatus;
+  paidAt: string | null;
+  refundedAt: string | null;
   createdAt: string;
 }
 
-/** Returned when initiating a payment — used to open Razorpay checkout */
+/** Returned when initiating an online payment — used to open Razorpay checkout */
 export interface InitiatePaymentResponse {
   razorpayOrderId: string;
   amount: number;

@@ -1,10 +1,11 @@
-export type UserRole = 'ADMIN' | 'CUSTOMER';
+export type UserRole = 'ADMIN' | 'STAFF' | 'CUSTOMER';
 
 export interface User {
   id: string;
   name: string;
   email: string;
   phone: string;
+  age: number;
   role: UserRole;
   createdAt: string; // ISO date string (serialised for transport)
 }
@@ -14,12 +15,13 @@ export interface RegisterPayload {
   name: string;
   email: string;
   phone: string;
+  age: number;
   password: string;
 }
 
-/** Sent from client on login */
+/** Sent from client on login — phone + password */
 export interface LoginPayload {
-  email: string;
+  phone: string;
   password: string;
 }
 

@@ -1,32 +1,27 @@
 import { FastifyPluginAsync } from 'fastify';
+import { AuthController } from '../controllers/auth.controller';
 import { authenticate } from '../middleware/authenticate';
 
 const authRoutes: FastifyPluginAsync = async (fastify) => {
   /**
    * POST /api/auth/register
-   * Body: { name, email, phone, password }
+   * Body: { name, phone, password }
    */
-  fastify.post('/register', async (request, reply) => {
-    // TODO: implement in AuthController
-    return reply.status(501).send({ success: false, error: 'Not implemented', statusCode: 501 });
-  });
+  fastify.post('/register', AuthController.register);
 
   /**
    * POST /api/auth/login
-   * Body: { email, password }
+   * Body: { phone, password }
    * Sets httpOnly cookie with JWT on success
    */
-  fastify.post('/login', async (request, reply) => {
-    // TODO: implement in AuthController
-    return reply.status(501).send({ success: false, error: 'Not implemented', statusCode: 501 });
-  });
+  fastify.post('/login', AuthController.login);
 
   /**
    * POST /api/auth/logout
    * Clears the auth cookie
    */
   fastify.post('/logout', { preHandler: [authenticate] }, async (request, reply) => {
-    reply.clearCookie('token');
+    reply.clearCookie('token', { path: '/' });
     return { success: true, message: 'Logged out successfully' };
   });
 
@@ -34,10 +29,7 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
    * GET /api/auth/me
    * Returns current authenticated user's profile
    */
-  fastify.get('/me', { preHandler: [authenticate] }, async (request, reply) => {
-    // TODO: implement in AuthController
-    return reply.status(501).send({ success: false, error: 'Not implemented', statusCode: 501 });
-  });
+  fastify.get('/me', { preHandler: [authenticate] }, AuthController.me);
 };
 
 export default authRoutes;

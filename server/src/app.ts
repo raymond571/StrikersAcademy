@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import Fastify from 'fastify';
 import fastifyCors from '@fastify/cors';
 import fastifyCookie from '@fastify/cookie';
@@ -12,11 +14,37 @@ import paymentRoutes from './routes/payment';
 import facilityRoutes from './routes/facility';
 import adminRoutes from './routes/admin';
 
+/** Read TLS cert/key files if HTTPS is enabled via env vars */
+function getHttpsOptions(): { key: Buffer; cert: Buffer } | undefined {
+  const keyPath = process.env.SSL_KEY_PATH;
+  const certPath = process.env.SSL_CERT_PATH;
+
+  if (!keyPath || !certPath) return undefined;
+
+  const resolvedKey = path.resolve(keyPath);
+  const resolvedCert = path.resolve(certPath);
+
+  if (!fs.existsSync(resolvedKey) || !fs.existsSync(resolvedCert)) {
+    console.warn(
+      `SSL_KEY_PATH or SSL_CERT_PATH not found (${resolvedKey}, ${resolvedCert}). Falling back to HTTP.`,
+    );
+    return undefined;
+  }
+
+  return {
+    key: fs.readFileSync(resolvedKey),
+    cert: fs.readFileSync(resolvedCert),
+  };
+}
+
 export async function buildServer() {
+  const httpsOptions = getHttpsOptions();
+
   const app = Fastify({
     logger: {
       level: process.env.NODE_ENV === 'production' ? 'warn' : 'info',
     },
+    ...(httpsOptions ? { https: httpsOptions } : {}),
   });
 
   // ── Plugins ────────────────────────────────────────────────
@@ -46,6 +74,7 @@ export async function buildServer() {
   app.get('/health', async () => ({
     status: 'ok',
     service: 'StrikersAcademy API',
+    https: !!httpsOptions,
     timestamp: new Date().toISOString(),
   }));
 

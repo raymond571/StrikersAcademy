@@ -1,5 +1,5 @@
 import { FastifyReply, FastifyRequest } from 'fastify';
-import { Role } from '@prisma/client';
+import type { UserRole } from '@strikers/shared';
 
 /** Verifies JWT from httpOnly cookie. Attach to any protected route. */
 export async function authenticate(
@@ -17,10 +17,17 @@ export async function authenticate(
   }
 }
 
-/** Require ADMIN role. Must be used after authenticate. */
-export function requireRole(...roles: Role[]) {
+/**
+ * Require one or more specific roles.
+ * Must be used after authenticate in the preHandler chain.
+ *
+ * Usage:
+ *   preHandler: [authenticate, requireRole('ADMIN')]
+ *   preHandler: [authenticate, requireRole('ADMIN', 'STAFF')]
+ */
+export function requireRole(...roles: UserRole[]) {
   return async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
-    const user = request.user as { role: Role };
+    const user = request.user as { role: UserRole };
     if (!roles.includes(user.role)) {
       reply.status(403).send({
         success: false,
@@ -30,3 +37,9 @@ export function requireRole(...roles: Role[]) {
     }
   };
 }
+
+/** Convenience guard: ADMIN or STAFF (receptionist). */
+export const requireStaffOrAdmin = requireRole('ADMIN', 'STAFF');
+
+/** Convenience guard: ADMIN only. */
+export const requireAdmin = requireRole('ADMIN');

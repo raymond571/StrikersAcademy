@@ -9,7 +9,8 @@ async function main() {
 
   try {
     await app.listen({ port: PORT, host: HOST });
-    console.log(`StrikersAcademy server running at http://${HOST}:${PORT}`);
+    const protocol = process.env.SSL_KEY_PATH ? 'https' : 'http';
+    console.log(`StrikersAcademy server running at ${protocol}://${HOST}:${PORT}`);
   } catch (err) {
     app.log.error(err);
     process.exit(1);

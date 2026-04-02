@@ -1,17 +1,17 @@
-import { Role } from '@prisma/client';
+import type { UserRole } from '@strikers/shared';
 
 // Extend Fastify's JWT payload type
 declare module '@fastify/jwt' {
   interface FastifyJWT {
     payload: {
       id: string;
-      email: string;
-      role: Role;
+      phone: string;
+      role: UserRole;
     };
     user: {
       id: string;
-      email: string;
-      role: Role;
+      phone: string;
+      role: UserRole;
     };
   }
 }

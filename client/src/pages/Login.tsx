@@ -7,7 +7,7 @@ export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -17,7 +17,7 @@ export default function LoginPage() {
     setError(null);
     setIsSubmitting(true);
     try {
-      await login(email, password);
+      await login(phone, password);
       navigate('/dashboard');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Login failed');
@@ -41,14 +41,15 @@ export default function LoginPage() {
           )}
 
           <div>
-            <label htmlFor="email" className="label">Email</label>
+            <label htmlFor="phone" className="label">Phone Number</label>
             <input
-              id="email"
-              type="email"
+              id="phone"
+              type="tel"
               className="input"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              placeholder="9876543210"
+              pattern="[6-9][0-9]{9}"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
               required
             />
           </div>
@@ -59,7 +60,7 @@ export default function LoginPage() {
               id="password"
               type="password"
               className="input"
-              placeholder="••••••••"
+              placeholder="Enter your password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
