@@ -1,57 +1,29 @@
 import { FastifyPluginAsync } from 'fastify';
 import { authenticate, requireRole } from '../middleware/authenticate';
+import { FacilityController } from '../controllers/facility.controller';
 
 const facilityRoutes: FastifyPluginAsync = async (fastify) => {
-  /**
-   * GET /api/facilities
-   * Public — list all active facilities
-   */
-  fastify.get('/', async (request, reply) => {
-    // TODO: FacilityController.list
-    return reply.status(501).send({ success: false, error: 'Not implemented', statusCode: 501 });
-  });
+  /** GET /api/facilities — list all active facilities (public) */
+  fastify.get('/', FacilityController.list);
 
-  /**
-   * GET /api/facilities/:id
-   * Public — get facility details + available slots
-   */
-  fastify.get('/:id', async (request, reply) => {
-    // TODO: FacilityController.getById
-    return reply.status(501).send({ success: false, error: 'Not implemented', statusCode: 501 });
-  });
+  /** GET /api/facilities/:id — get facility details (public) */
+  fastify.get('/:id', FacilityController.getById);
 
-  /**
-   * GET /api/facilities/:id/slots
-   * Public — get slots for a facility on a given date
-   * Query: ?date=YYYY-MM-DD&availableOnly=true
-   */
-  fastify.get('/:id/slots', async (request, reply) => {
-    // TODO: SlotController.getByFacility
-    return reply.status(501).send({ success: false, error: 'Not implemented', statusCode: 501 });
-  });
+  /** GET /api/facilities/:id/slots — slots for a date (public) */
+  fastify.get('/:id/slots', FacilityController.getSlots);
 
-  /**
-   * POST /api/facilities — Admin only
-   */
+  /** POST /api/facilities — create facility (ADMIN only) */
   fastify.post(
     '/',
     { preHandler: [authenticate, requireRole('ADMIN')] },
-    async (request, reply) => {
-      // TODO: FacilityController.create
-      return reply.status(501).send({ success: false, error: 'Not implemented', statusCode: 501 });
-    },
+    FacilityController.create,
   );
 
-  /**
-   * PATCH /api/facilities/:id — Admin only
-   */
+  /** PATCH /api/facilities/:id — update facility (ADMIN only) */
   fastify.patch(
     '/:id',
     { preHandler: [authenticate, requireRole('ADMIN')] },
-    async (request, reply) => {
-      // TODO: FacilityController.update
-      return reply.status(501).send({ success: false, error: 'Not implemented', statusCode: 501 });
-    },
+    FacilityController.update,
   );
 };
 
