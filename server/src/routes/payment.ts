@@ -1,5 +1,6 @@
 import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/authenticate';
+import { PaymentController } from '../controllers/payment.controller';
 
 const paymentRoutes: FastifyPluginAsync = async (fastify) => {
   /**
@@ -7,30 +8,21 @@ const paymentRoutes: FastifyPluginAsync = async (fastify) => {
    * Auth required — create a Razorpay order for a booking
    * Body: { bookingId }
    */
-  fastify.post('/initiate', { preHandler: [authenticate] }, async (request, reply) => {
-    // TODO: PaymentController.initiate
-    return reply.status(501).send({ success: false, error: 'Not implemented', statusCode: 501 });
-  });
+  fastify.post('/initiate', { preHandler: [authenticate] }, PaymentController.initiate);
 
   /**
    * POST /api/payments/verify
    * Auth required — verify Razorpay payment signature after checkout
    * Body: { razorpayOrderId, razorpayPaymentId, razorpaySignature, bookingId }
    */
-  fastify.post('/verify', { preHandler: [authenticate] }, async (request, reply) => {
-    // TODO: PaymentController.verify
-    return reply.status(501).send({ success: false, error: 'Not implemented', statusCode: 501 });
-  });
+  fastify.post('/verify', { preHandler: [authenticate] }, PaymentController.verify);
 
   /**
    * POST /api/payments/webhook
    * Public — Razorpay webhook endpoint (verified via signature header)
    * Register this URL in Razorpay dashboard
    */
-  fastify.post('/webhook', async (request, reply) => {
-    // TODO: PaymentController.webhook
-    return reply.status(501).send({ success: false, error: 'Not implemented', statusCode: 501 });
-  });
+  fastify.post('/webhook', PaymentController.webhook);
 };
 
 export default paymentRoutes;

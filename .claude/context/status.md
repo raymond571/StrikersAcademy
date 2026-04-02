@@ -3,7 +3,7 @@ _Maintained by Shakespeare. Reflects actual code state, not plans._
 _Last updated: 2026-04-02_
 
 ## Overall phase
-**Phase 2 — in progress. Foundation + Facility & Booking APIs complete. Payments, Admin, and frontend integration remain.**
+**Phase 3 complete. Foundation + Auth + Facility + Booking + Payment APIs done. Admin panel and frontend integration remain.**
 
 ---
 
@@ -60,18 +60,18 @@ _Last updated: 2026-04-02_
 - [x] Payment records created for both online and offline bookings
 - [x] Cancelled paid-online bookings marked as REFUNDED
 
-### Payments infrastructure (PARTIAL)
-- [x] `PaymentService` — Razorpay SDK wrapper with `createOrder`, `verifySignature`, `verifyWebhookSignature`
+### Payment API (COMPLETE)
+- [x] `PaymentService` — Razorpay SDK wrapper: `createOrder`, `verifySignature`, `verifyWebhookSignature`
+- [x] `PaymentController` — fully implemented: initiate, verify, webhook
+- [x] `POST /api/payments/initiate` — creates Razorpay order for PENDING booking, idempotent
+- [x] `POST /api/payments/verify` — HMAC verification, transactional booking confirmation
+- [x] `POST /api/payments/webhook` — handles `payment.captured` + `payment.failed`, idempotent
 - [x] Payment page UI — opens Razorpay modal, handles success/failure states
+- [x] `errorHandler` updated: 502 pass-through for gateway errors
 
 ---
 
 ## What is STUB (route exists, returns 501)
-
-### Payment API
-- [ ] `POST /api/payments/initiate` — create Razorpay order
-- [ ] `POST /api/payments/verify` — verify payment signature + confirm booking
-- [ ] `POST /api/payments/webhook` — Razorpay webhook handler
 
 ### Admin API (all 12 endpoints are stubs)
 - [ ] `GET /api/admin/dashboard`
@@ -92,7 +92,6 @@ _Last updated: 2026-04-02_
 ## What is NOT started
 
 ### Business logic (controllers + services)
-- [ ] `PaymentController` — all methods are `throw new Error('Not implemented')`
 - [ ] `AdminController` — not created
 - [ ] Waitlist promotion logic (when booking cancels → promote waitlist)
 - [ ] Coupon validation logic

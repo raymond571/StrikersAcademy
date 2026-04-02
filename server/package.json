@@ -11,7 +11,10 @@
     "db:migrate:prod": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
-    "lint": "eslint src --ext .ts"
+    "lint": "eslint src --ext .ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@fastify/cookie": "^9.3.1",
@@ -28,9 +31,11 @@
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
+    "@vitest/coverage-v8": "^2.1.9",
     "prisma": "^5.14.0",
     "tsx": "^4.15.7",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "vitest": "^2.1.9"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

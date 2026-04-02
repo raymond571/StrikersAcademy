@@ -68,9 +68,14 @@ Registered in `app.ts` with prefix `/api/auth`.
 
 | Method | Path | Auth | Status | Notes |
 |---|---|---|---|---|
-| POST | `/api/payments/initiate` | Required | STUB | Body: `{ bookingId }`. Creates Razorpay order. Returns `InitiatePaymentResponse`. |
-| POST | `/api/payments/verify` | Required | STUB | Body: `{ razorpayOrderId, razorpayPaymentId, razorpaySignature, bookingId }`. Verifies HMAC. |
-| POST | `/api/payments/webhook` | None | STUB | Razorpay webhook (verified via `X-Razorpay-Signature` header). |
+| POST | `/api/payments/initiate` | Required | DONE | Body: `{ bookingId }`. Validates booking is PENDING + ONLINE. Idempotent (returns existing order if already created). Creates Razorpay order, persists `razorpayOrderId`. Returns `{ razorpayOrderId, amount, currency, keyId, bookingId }`. 201 on new, 200 on existing. 502 on gateway failure. |
+| POST | `/api/payments/verify` | Required | DONE | Body: `{ bookingId, razorpayOrderId, razorpayPaymentId, razorpaySignature }`. Verifies HMAC. On success: transactionally sets Payment→SUCCESS + Booking→CONFIRMED. On failure: marks Payment→FAILED. Idempotent if already SUCCESS. |
+| POST | `/api/payments/webhook` | None | DONE | Razorpay sends `payment.captured` / `payment.failed`. Verified via `X-Razorpay-Signature` header. Idempotent — always returns 200. Looks up payment by `razorpayOrderId`. |
+
+### Payment flow
+- `initiate` → `verify` is the client-driven flow (Razorpay checkout modal)
+- `webhook` is the server-driven fallback (handles network drop / tab close after payment)
+- Both `verify` and `webhook` confirm in a DB transaction
 
 ---
 
@@ -117,4 +122,5 @@ All routes require `authenticate`. Role notes per route.
 ### `errorHandler` (`server/src/middleware/errorHandler.ts`)
 - Handles Fastify validation errors → 400
 - Known operational errors (statusCode < 500) → pass-through
+- 502 Bad Gateway → pass-through (upstream gateway errors, e.g. Razorpay)
 - Unknown server errors → 500, no detail leak in production

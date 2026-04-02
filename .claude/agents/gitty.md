@@ -64,12 +64,24 @@ Workflow:
 
 ### 2. Pull Requests
 
-Before creating a PR, show the user:
+Before creating a PR, run this sequence:
+
+#### Step 1 — Show the diff
 ```bash
 git log main..HEAD --oneline
 git diff main...HEAD --stat
 ```
 
+Show this output to the user so they can see what's going in.
+
+#### Step 2 — Delegate to Tester
+Before creating the PR, **invoke the `tester` agent** to generate tests for the changed code:
+
+> "I'm about to create a PR. Please analyze the diff from `main...HEAD` and write tests for any changed files."
+
+Wait for the tester agent to complete. If tester flags that the test runner is not installed, surface that to the user and ask how they want to proceed before continuing with PR creation.
+
+#### Step 3 — Draft and confirm the PR
 Draft a PR description in this structure:
 ```
 ## Summary
@@ -77,7 +89,7 @@ Draft a PR description in this structure:
 - <bullet 2>
 
 ## Test plan
-- [ ] <test step 1>
+- [ ] <test step 1 — populated from tester output>
 - [ ] <test step 2>
 
 Generated with [Claude Code](https://claude.ai/claude-code)
@@ -89,6 +101,7 @@ Rules:
 - Never push directly to `main` or `master`
 - Always create a feature branch first if not already on one
 - Show the full PR draft to the user before creating it
+- The Test plan section should reflect what tester actually wrote — not generic placeholder steps
 - Return the PR URL after creation
 
 ### 3. Branch Management

@@ -18,8 +18,8 @@ export function errorHandler(
     return;
   }
 
-  // Known operational errors
-  if (statusCode < 500) {
+  // Known operational errors (includes 502 Bad Gateway for upstream failures)
+  if (statusCode < 500 || statusCode === 502) {
     reply.status(statusCode).send({
       success: false,
       error: error.message,
