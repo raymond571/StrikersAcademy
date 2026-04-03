@@ -51,7 +51,7 @@ export class AuthController {
     // Issue JWT — payload carried in httpOnly cookie
     const token = await reply.jwtSign(
       { id: user.id, phone: user.phone, role: user.role },
-      { expiresIn: '30d' },
+      { expiresIn: '7d' },
     );
 
     reply
@@ -60,7 +60,7 @@ export class AuthController {
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
         path: '/',
-        maxAge: 60 * 60 * 24 * 30, // 30 days in seconds
+        maxAge: 60 * 60 * 24 * 7, // 7 days in seconds
       })
       .status(201);
 
@@ -87,7 +87,7 @@ export class AuthController {
 
     const token = await reply.jwtSign(
       { id: user.id, phone: user.phone, role: user.role },
-      { expiresIn: '30d' },
+      { expiresIn: '7d' },
     );
 
     reply.setCookie('token', token, {

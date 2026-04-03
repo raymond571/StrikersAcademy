@@ -7,14 +7,18 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
    * POST /api/auth/register
    * Body: { name, phone, password }
    */
-  fastify.post('/register', AuthController.register);
+  fastify.post('/register', {
+    config: { rateLimit: { max: 3, timeWindow: '1 minute' } },
+  }, AuthController.register);
 
   /**
    * POST /api/auth/login
    * Body: { phone, password }
    * Sets httpOnly cookie with JWT on success
    */
-  fastify.post('/login', AuthController.login);
+  fastify.post('/login', {
+    config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+  }, AuthController.login);
 
   /**
    * POST /api/auth/logout

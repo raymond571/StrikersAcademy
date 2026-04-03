@@ -22,7 +22,9 @@ const paymentRoutes: FastifyPluginAsync = async (fastify) => {
    * Public — Razorpay webhook endpoint (verified via signature header)
    * Register this URL in Razorpay dashboard
    */
-  fastify.post('/webhook', PaymentController.webhook);
+  fastify.post('/webhook', {
+    config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+  }, PaymentController.webhook);
 };
 
 export default paymentRoutes;

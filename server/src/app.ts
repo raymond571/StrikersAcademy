@@ -4,9 +4,12 @@ import Fastify from 'fastify';
 import fastifyCors from '@fastify/cors';
 import fastifyCookie from '@fastify/cookie';
 import fastifyJwt from '@fastify/jwt';
+import fastifyRateLimit from '@fastify/rate-limit';
+import fastifyHelmet from '@fastify/helmet';
 
 import { prismaPlugin } from './plugins/prisma';
 import { errorHandler } from './middleware/errorHandler';
+import { validateEnv } from './utils/validateEnv';
 
 import authRoutes from './routes/auth';
 import bookingRoutes from './routes/booking';
@@ -38,6 +41,8 @@ function getHttpsOptions(): { key: Buffer; cert: Buffer } | undefined {
 }
 
 export async function buildServer() {
+  validateEnv();
+
   const httpsOptions = getHttpsOptions();
 
   const app = Fastify({
@@ -50,9 +55,20 @@ export async function buildServer() {
   });
 
   // ── Plugins ────────────────────────────────────────────────
+  await app.register(fastifyRateLimit, {
+    max: 100,
+    timeWindow: '1 minute',
+  });
+
+  await app.register(fastifyHelmet, {
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+  });
+
   await app.register(fastifyCors, {
     origin: process.env.CLIENT_URL ?? 'http://localhost:5173',
     credentials: true,
+    maxAge: 86400,
   });
 
   await app.register(fastifyCookie, {
