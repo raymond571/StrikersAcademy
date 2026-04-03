@@ -44,6 +44,8 @@ export async function buildServer() {
     logger: {
       level: process.env.NODE_ENV === 'production' ? 'warn' : 'info',
     },
+    // Trust first proxy (Nginx/Cloudflare) so req.ip reflects the real client IP
+    trustProxy: process.env.NODE_ENV === 'production',
     ...(httpsOptions ? { https: httpsOptions } : {}),
   });
 
