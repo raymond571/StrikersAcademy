@@ -10,6 +10,7 @@ import fastifyHelmet from '@fastify/helmet';
 import { prismaPlugin } from './plugins/prisma';
 import { errorHandler } from './middleware/errorHandler';
 import { validateEnv } from './utils/validateEnv';
+import { startPendingBookingCleanup } from './jobs/expire-pending-bookings';
 
 import authRoutes from './routes/auth';
 import bookingRoutes from './routes/booking';
@@ -102,6 +103,11 @@ export async function buildServer() {
   await app.register(bookingRoutes, { prefix: '/api/bookings' });
   await app.register(paymentRoutes, { prefix: '/api/payments' });
   await app.register(adminRoutes, { prefix: '/api/admin' });
+
+  // ── Background jobs ────────────────────────────────────────
+  app.addHook('onReady', () => {
+    startPendingBookingCleanup(app.prisma);
+  });
 
   return app;
 }
