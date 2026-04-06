@@ -44,8 +44,11 @@ echo ""
 echo "→ Setting Prisma provider to postgresql..."
 sed -i 's/provider = "sqlite"/provider = "postgresql"/' "$APP_DIR/server/prisma/schema.prisma"
 
-# ── 3. Install dependencies ──────────────────────────────────
+# ── 3. Install dependencies ────────���─────────────────────────
 echo ""
+echo "→ Cleaning node_modules..."
+rm -rf "$APP_DIR/node_modules" "$APP_DIR/server/node_modules" "$APP_DIR/client/node_modules" "$APP_DIR/shared/node_modules"
+
 echo "→ Installing dependencies..."
 npm ci --omit=dev
 
