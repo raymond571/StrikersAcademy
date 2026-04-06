@@ -1,0 +1,80 @@
+name: Deploy
+
+on:
+  push:
+    branches: [master, develop]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - development
+
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: ci
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'master' && 'production' || github.event.inputs.environment || 'development' }}
+
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          command_timeout: 10m
+          script: |
+            set -euo pipefail
+
+            APP_DIR="/var/www/strickersacademy"
+            BRANCH="${{ github.ref_name }}"
+
+            echo "Deploying branch: $BRANCH"
+
+            # 1. Pull latest code
+            cd "$APP_DIR"
+            git fetch origin
+            git reset --hard "origin/$BRANCH"
+
+            # 2. Write server .env from GitHub secrets
+            cat > "$APP_DIR/server/.env" << 'ENVEOF'
+            NODE_ENV=${{ secrets.NODE_ENV || 'production' }}
+            PORT=${{ secrets.PORT || '5000' }}
+            HOST=127.0.0.1
+            CLIENT_URL=${{ secrets.CLIENT_URL }}
+            DATABASE_URL=${{ secrets.DATABASE_URL }}
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            COOKIE_SECRET=${{ secrets.COOKIE_SECRET }}
+            RAZORPAY_KEY_ID=${{ secrets.RAZORPAY_KEY_ID }}
+            RAZORPAY_KEY_SECRET=${{ secrets.RAZORPAY_KEY_SECRET }}
+            RAZORPAY_WEBHOOK_SECRET=${{ secrets.RAZORPAY_WEBHOOK_SECRET }}
+            ENVEOF
+
+            # 3. Write client .env (VITE_ vars are build-time only)
+            cat > "$APP_DIR/client/.env" << 'ENVEOF'
+            VITE_API_URL=
+            VITE_RAZORPAY_KEY_ID=${{ secrets.RAZORPAY_KEY_ID }}
+            VITE_APP_NAME=StrikersAcademy
+            ENVEOF
+
+            # 4. Set correct permissions
+            chmod 600 "$APP_DIR/server/.env"
+            chmod 600 "$APP_DIR/client/.env"
+
+            # 5. Run deploy script (skip pull since we already did it)
+            bash "$APP_DIR/deployment/deploy.sh" --skip-pull --branch "$BRANCH"
+
+            echo "Deploy complete for $BRANCH"

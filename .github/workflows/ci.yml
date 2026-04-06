@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [master, develop]
+  pull_request:
+    branches: [master, develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build shared types
+        run: npm run build --workspace=shared
+
+      - name: Generate Prisma client
+        run: npm run db:generate --workspace=server
+
+      - name: Run server tests
+        run: npx vitest run src/services/ src/utils/ src/middleware/
+        working-directory: server
+        env:
+          DATABASE_URL: "file:./test.db"
+          JWT_SECRET: ci-test-jwt-secret
+          COOKIE_SECRET: ci-test-cookie-secret
+          NODE_ENV: test
