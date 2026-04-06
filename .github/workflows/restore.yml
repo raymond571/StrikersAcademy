@@ -1,8 +1,6 @@
 name: Database Restore
 
 on:
-  push:
-    branches: [master]
   workflow_dispatch:
     inputs:
       backup_file:
