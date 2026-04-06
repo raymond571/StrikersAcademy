@@ -243,6 +243,7 @@ export function BookingsTab({ initialFilter = '' }: Props) {
   const [totalPages, setTotalPages] = useState(1);
   const [statusFilter, setStatusFilter] = useState(initialFilter);
   const [dateFilter, setDateFilter] = useState('');
+  const [timeView, setTimeView] = useState<'all' | 'past' | 'today' | 'upcoming'>('all');
   const [updatingBooking, setUpdatingBooking] = useState<AdminBooking | null>(null);
 
   const fetchBookings = useCallback(async () => {
@@ -285,8 +286,50 @@ export function BookingsTab({ initialFilter = '' }: Props) {
     }
   };
 
+  const today = new Date().toISOString().split('T')[0];
+  const nowHHMM = `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`;
+
+  const filteredByTime = timeView === 'all' ? bookings : bookings.filter((b) => {
+    const slotDate = b.slot?.date ?? '';
+    const slotTime = b.slot?.startTime ?? '';
+    if (timeView === 'today') return slotDate === today;
+    if (timeView === 'upcoming') return slotDate > today || (slotDate === today && slotTime > nowHHMM);
+    if (timeView === 'past') return slotDate < today || (slotDate === today && slotTime <= nowHHMM);
+    return true;
+  });
+
   return (
     <div className="space-y-4">
+      {/* Time view tabs */}
+      <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
+        {([
+          { id: 'all', label: 'All' },
+          { id: 'past', label: 'Past' },
+          { id: 'today', label: 'Today' },
+          { id: 'upcoming', label: 'Upcoming' },
+        ] as const).map((t) => (
+          <button
+            key={t.id}
+            onClick={() => { setTimeView(t.id); setPage(1); }}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              timeView === t.id
+                ? 'bg-white text-brand-600 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {t.label}
+            {t.id !== 'all' && (
+              <span className="ml-1 text-gray-400">
+                ({(t.id === 'today' ? bookings.filter(b => b.slot?.date === today).length
+                  : t.id === 'upcoming' ? bookings.filter(b => (b.slot?.date ?? '') > today || ((b.slot?.date ?? '') === today && (b.slot?.startTime ?? '') > nowHHMM)).length
+                  : bookings.filter(b => (b.slot?.date ?? '') < today || ((b.slot?.date ?? '') === today && (b.slot?.startTime ?? '') <= nowHHMM)).length
+                )})
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
         <select
@@ -305,9 +348,9 @@ export function BookingsTab({ initialFilter = '' }: Props) {
           onChange={(e) => { setDateFilter(e.target.value); setPage(1); }}
           className="input w-auto"
         />
-        {(statusFilter || dateFilter) && (
+        {(statusFilter || dateFilter || timeView !== 'all') && (
           <button
-            onClick={() => { setStatusFilter(''); setDateFilter(''); setPage(1); }}
+            onClick={() => { setStatusFilter(''); setDateFilter(''); setTimeView('all'); setPage(1); }}
             className="btn-secondary text-xs"
           >
             Clear filters
@@ -317,13 +360,13 @@ export function BookingsTab({ initialFilter = '' }: Props) {
 
       {loading ? (
         <p className="text-sm text-gray-500">Loading bookings...</p>
-      ) : bookings.length === 0 ? (
+      ) : filteredByTime.length === 0 ? (
         <p className="text-sm text-gray-500">No bookings found</p>
       ) : (
         <>
           {/* Mobile-friendly card list */}
           <div className="space-y-3">
-            {bookings.map((b) => (
+            {filteredByTime.map((b) => (
               <div key={b.id} className="card">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
