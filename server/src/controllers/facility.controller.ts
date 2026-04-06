@@ -84,7 +84,7 @@ export class FacilityController {
 
     const facility = await FacilityService.create(
       request.server.prisma,
-      parseResult.data,
+      parseResult.data as Parameters<typeof FacilityService.create>[1],
     );
     reply.status(201);
     return success({ facility }, 'Facility created');
@@ -106,7 +106,7 @@ export class FacilityController {
     const facility = await FacilityService.update(
       request.server.prisma,
       id,
-      parseResult.data,
+      parseResult.data as Parameters<typeof FacilityService.update>[2],
     );
     return success({ facility }, 'Facility updated');
   }
