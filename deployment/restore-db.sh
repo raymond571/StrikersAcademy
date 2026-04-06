@@ -68,3 +68,4 @@ pm2 start strikers-api
 
 echo ""
 echo "Restore complete! Database restored from: $(basename "$BACKUP_FILE")"
+

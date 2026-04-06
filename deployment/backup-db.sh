@@ -92,3 +92,4 @@ cleanup_old_backups
 TOTAL=$(find "$BACKUP_DIR" -name "${DB_NAME}_*.sql.gz" | wc -l)
 log "Total local backups: $TOTAL"
 log "Done."
+
