@@ -161,7 +161,7 @@ model Payment {
   amount            Int       // in paise (final amount after discount)
   currency          String    @default("INR")
   method            String    @default("ONLINE")  // PaymentMethod: "ONLINE" | "OFFLINE"
-  razorpayOrderId   String?   @unique             // null for offline payments
+  razorpayOrderId   String?                        // null for offline; shared across batch bookings
   razorpayPaymentId String?                        // set after successful payment
   razorpaySignature String?                        // verified signature stored for audit
   status            String    @default("PENDING")  // PaymentStatus

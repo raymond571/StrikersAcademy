@@ -350,10 +350,11 @@ export class PaymentController {
 
     const prisma = request.server.prisma;
 
-    // Find payment by razorpayOrderId
-    const payment = await prisma.payment.findUnique({
+    // Find payments by razorpayOrderId (may be multiple for batch bookings)
+    const payments = await prisma.payment.findMany({
       where: { razorpayOrderId },
     });
+    const payment = payments[0];
 
     if (!payment) {
       // Order not found — could be from a different system; acknowledge
@@ -361,27 +362,28 @@ export class PaymentController {
     }
 
     if (eventType === 'payment.captured') {
-      // Only update if not already marked SUCCESS (idempotent)
-      if (payment.status !== 'SUCCESS') {
+      // Update ALL payments sharing this order (batch bookings)
+      const pendingPayments = payments.filter((p: any) => p.status !== 'SUCCESS');
+      if (pendingPayments.length > 0) {
         await prisma.$transaction(async (tx: any) => {
-          await tx.payment.update({
-            where: { id: payment.id },
-            data: {
-              razorpayPaymentId,
-              status: 'SUCCESS',
-              paidAt: new Date(),
-            },
-          });
-          await tx.booking.update({
-            where: { id: payment.bookingId },
-            data: { status: 'CONFIRMED' },
-          });
+          const now = new Date();
+          for (const p of pendingPayments) {
+            await tx.payment.update({
+              where: { id: p.id },
+              data: { razorpayPaymentId, status: 'SUCCESS', paidAt: now },
+            });
+            await tx.booking.update({
+              where: { id: p.bookingId },
+              data: { status: 'CONFIRMED' },
+            });
+          }
         });
       }
     } else if (eventType === 'payment.failed') {
-      if (payment.status === 'PENDING') {
+      const pendingPayments = payments.filter((p: any) => p.status === 'PENDING');
+      for (const p of pendingPayments) {
         await prisma.payment.update({
-          where: { id: payment.id },
+          where: { id: p.id },
           data: { razorpayPaymentId, status: 'FAILED' },
         });
       }
