@@ -2,7 +2,9 @@
  * AdminService — business logic for admin panel operations.
  * Dashboard stats, booking management, user listing, slot operations, revenue reports, coupons.
  */
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
+
+type TxClient = Prisma.TransactionClient;
 import { PaymentService } from './payment.service';
 import { hashPassword } from '../utils/password';
 
@@ -154,7 +156,7 @@ export const AdminService = {
       httpError('teamName is required when booking for a team', 400);
     }
 
-    return prisma.$transaction(async (tx) => {
+    return prisma.$transaction(async (tx: TxClient) => {
       // Verify user exists
       const user = await tx.user.findUnique({ where: { id: data.userId } });
       if (!user) httpError('User not found', 404);
@@ -223,7 +225,7 @@ export const AdminService = {
     });
     if (!booking) httpError('Booking not found', 404);
 
-    return prisma.$transaction(async (tx) => {
+    return prisma.$transaction(async (tx: TxClient) => {
       const payment = booking!.payment;
 
       // Handle payment status changes — issue Razorpay refund if applicable
@@ -489,10 +491,10 @@ export const AdminService = {
       .map(([date, stats]) => ({ date, ...stats }))
       .sort((a, b) => a.date.localeCompare(b.date));
 
-    const totalRevenue = successPayments.reduce((sum, p) => sum + p.amount, 0);
-    const totalOnline = successPayments.filter((p) => p.method === 'ONLINE').reduce((sum, p) => sum + p.amount, 0);
+    const totalRevenue = successPayments.reduce((sum: number, p: any) => sum + p.amount, 0);
+    const totalOnline = successPayments.filter((p: any) => p.method === 'ONLINE').reduce((sum: number, p: any) => sum + p.amount, 0);
     const totalOffline = totalRevenue - totalOnline;
-    const totalRefunds = refundedPayments.reduce((sum, p) => sum + p.amount, 0);
+    const totalRefunds = refundedPayments.reduce((sum: number, p: any) => sum + p.amount, 0);
     const netRevenue = totalRevenue - totalRefunds;
 
     return {

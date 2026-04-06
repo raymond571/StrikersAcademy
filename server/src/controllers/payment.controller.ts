@@ -184,7 +184,7 @@ export class PaymentController {
     }
 
     // Signature valid — confirm booking + payment in a transaction
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx: any) => {
       const updatedPayment = await tx.payment.update({
         where: { id: payment!.id },
         data: {
@@ -338,7 +338,7 @@ export class PaymentController {
     if (eventType === 'payment.captured') {
       // Only update if not already marked SUCCESS (idempotent)
       if (payment.status !== 'SUCCESS') {
-        await prisma.$transaction(async (tx) => {
+        await prisma.$transaction(async (tx: any) => {
           await tx.payment.update({
             where: { id: payment.id },
             data: {

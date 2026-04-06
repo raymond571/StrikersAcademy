@@ -82,11 +82,11 @@ export const FacilityService = {
     const currentTimeHHMM = `${String(nowIST.getHours()).padStart(2, '0')}:${String(nowIST.getMinutes()).padStart(2, '0')}`;
 
     // Enrich slots with availability info
-    const enriched = slots.map((slot) => {
+    const enriched = slots.map((slot: any) => {
       const bookedCount = slot._count.bookings;
 
       // Check if this slot is blocked
-      const isBlocked = blocks.some((block) => {
+      const isBlocked = blocks.some((block: any) => {
         if (!block.startTime || !block.endTime) return true; // all-day block
         return slot.startTime >= block.startTime && slot.startTime < block.endTime;
       });
@@ -112,7 +112,7 @@ export const FacilityService = {
     });
 
     if (availableOnly) {
-      return enriched.filter((s) => s.isAvailable);
+      return enriched.filter((s: any) => s.isAvailable);
     }
 
     return enriched;

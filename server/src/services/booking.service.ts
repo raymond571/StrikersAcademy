@@ -2,7 +2,9 @@
  * BookingService — slot reservation and booking lifecycle management.
  * All booking creation uses a Prisma interactive transaction to prevent race conditions.
  */
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
+
+type TxClient = Prisma.TransactionClient;
 import { PaymentService } from './payment.service';
 
 /** Throw an HTTP-aware error */
@@ -41,7 +43,7 @@ export const BookingService = {
       httpError('teamName is required when booking for a team', 400);
     }
 
-    return prisma.$transaction(async (tx) => {
+    return prisma.$transaction(async (tx: TxClient) => {
       // Fetch slot with facility (lock row via transaction)
       const slot = await tx.slot.findUnique({
         where: { id: data.slotId },
@@ -59,7 +61,7 @@ export const BookingService = {
         },
       });
 
-      const isBlocked = blocks.some((block) => {
+      const isBlocked = blocks.some((block: any) => {
         if (!block.startTime || !block.endTime) return true;
         return slot!.startTime >= block.startTime && slot!.startTime < block.endTime;
       });
@@ -259,7 +261,7 @@ export const BookingService = {
       }
     }
 
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx: TxClient) => {
       // Check availability blocks on new slot
       const blocks = await tx.availabilityBlock.findMany({
         where: {
@@ -267,7 +269,7 @@ export const BookingService = {
           OR: [{ facilityId: newSlot!.facilityId }, { facilityId: null }],
         },
       });
-      const isBlocked = blocks.some((block) => {
+      const isBlocked = blocks.some((block: any) => {
         if (!block.startTime || !block.endTime) return true;
         return newSlot!.startTime >= block.startTime && newSlot!.startTime < block.endTime;
       });
@@ -385,7 +387,7 @@ export const BookingService = {
     }
 
     // Cancel booking and process refund if applicable
-    return prisma.$transaction(async (tx) => {
+    return prisma.$transaction(async (tx: TxClient) => {
       // Check if refund is needed (paid online)
       const payment = booking!.payment;
       const needsRefund = payment && payment.status === 'SUCCESS' && payment.razorpayPaymentId;
