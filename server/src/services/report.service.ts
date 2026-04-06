@@ -11,7 +11,7 @@ function formatPaise(paise: number): string {
 }
 
 export const ReportService = {
-  /** Generate a PDF revenue report for a date range */
+  /** Generate a visual PDF revenue report with colored cards */
   async revenueReportPDF(prisma: PrismaClient, from: string, to: string): Promise<{ stream: PDFKit.PDFDocument; filename: string }> {
     const report = await AdminService.revenueReport(prisma, { from, to });
     const settings = await SettingsService.getMany(prisma, ['academy_name', 'academy_address']);
@@ -19,74 +19,100 @@ export const ReportService = {
     const doc = new PDFDocument({ size: 'A4', margin: 50 });
     const filename = `revenue-report-${from}-to-${to}.pdf`;
 
+    // Helper to draw a colored card
+    const drawCard = (x: number, y: number, w: number, h: number, bgColor: string, label: string, value: string, border?: string) => {
+      doc.save();
+      if (border) {
+        doc.roundedRect(x, y, w, h, 6).lineWidth(2).strokeColor(border).stroke();
+        doc.fillColor('#000000').fontSize(9).font('Helvetica').text(label, x + 10, y + 8, { width: w - 20 });
+        doc.fillColor('#000000').fontSize(18).font('Helvetica-Bold').text(value, x + 10, y + 26, { width: w - 20 });
+      } else {
+        doc.roundedRect(x, y, w, h, 6).fill(bgColor);
+        doc.fillColor('#FFFFFF').fontSize(9).font('Helvetica').text(label, x + 10, y + 8, { width: w - 20 });
+        doc.fillColor('#FFFFFF').fontSize(18).font('Helvetica-Bold').text(value, x + 10, y + 26, { width: w - 20 });
+      }
+      doc.restore();
+      doc.fillColor('#000000');
+    };
+
     // Header
     doc.fontSize(18).font('Helvetica-Bold').text(settings.academy_name || 'StrikersAcademy', { align: 'center' });
     doc.fontSize(10).font('Helvetica').text(settings.academy_address || '', { align: 'center' });
     doc.moveDown();
     doc.fontSize(14).font('Helvetica-Bold').text('Revenue Report', { align: 'center' });
     doc.fontSize(10).font('Helvetica').text(`${from} to ${to}`, { align: 'center' });
-    doc.moveDown();
-    doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
-    doc.moveDown();
+    doc.moveDown(1.5);
 
-    // Summary
-    doc.fontSize(11).font('Helvetica-Bold').text('Summary');
-    doc.moveDown(0.5);
-    doc.fontSize(10).font('Helvetica');
+    // Row 1: Gross, Refunds, Net
+    const cw = 155;
+    const ch = 55;
+    const gap = 12;
+    let sy = doc.y;
 
-    const summaryData = [
-      ['Gross Revenue', formatPaise(report.totalRevenue)],
-      ['Online Payments', formatPaise(report.totalOnline)],
-      ['Offline Payments', formatPaise(report.totalOffline)],
-      ['Total Refunds', formatPaise(report.totalRefunds)],
-      ['Net Revenue', formatPaise(report.netRevenue)],
-      ['Total Transactions', String(report.totalPayments)],
-      ['Refund Count', String(report.totalRefundCount)],
-    ];
+    drawCard(50, sy, cw, ch, '#6B7280', 'Gross Revenue', formatPaise(report.totalRevenue));
+    drawCard(50 + cw + gap, sy, cw, ch, '#EF4444', 'Refunds (' + report.totalRefundCount + ')', '-' + formatPaise(report.totalRefunds));
+    drawCard(50 + 2 * (cw + gap), sy, cw, ch, '', 'Net Revenue', formatPaise(report.netRevenue), '#10B981');
 
-    for (const [label, value] of summaryData) {
-      doc.text(`${label}:`, 60, doc.y, { continued: true, width: 200 });
-      doc.text(value, { align: 'right', width: 200 });
-    }
+    sy += ch + gap;
 
-    doc.moveDown();
-    doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
-    doc.moveDown();
+    // Row 2: Online, Offline, Transactions
+    drawCard(50, sy, cw, ch, '#10B981', 'Online Payments', formatPaise(report.totalOnline));
+    drawCard(50 + cw + gap, sy, cw, ch, '#3B82F6', 'Offline Payments', formatPaise(report.totalOffline));
+    drawCard(50 + 2 * (cw + gap), sy, cw, ch, '#6B7280', 'Transactions', String(report.totalPayments));
 
-    // Daily breakdown
+    doc.y = sy + ch + gap * 2;
+
+    // Daily breakdown table
     if (report.daily.length > 0) {
-      doc.fontSize(11).font('Helvetica-Bold').text('Daily Breakdown');
+      doc.fontSize(12).font('Helvetica-Bold').fillColor('#000000').text('Daily Breakdown');
       doc.moveDown(0.5);
 
-      const cols = [50, 130, 210, 290, 370, 440, 500];
-      doc.fontSize(8).font('Helvetica-Bold');
-      doc.text('Date', cols[0], doc.y);
-      doc.text('Revenue', cols[1], doc.y);
-      doc.text('Online', cols[2], doc.y);
-      doc.text('Offline', cols[3], doc.y);
-      doc.text('Refunds', cols[4], doc.y);
-      doc.text('Net', cols[5], doc.y);
-      doc.text('Txns', cols[6], doc.y);
-      doc.moveDown(0.5);
-      doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
+      // Table header with background
+      const tableY = doc.y;
+      doc.save();
+      doc.rect(50, tableY, 495, 18).fill('#F3F4F6');
+      doc.restore();
 
-      doc.fontSize(8).font('Helvetica');
+      const cols = [55, 135, 215, 290, 365, 435, 500];
+      doc.fontSize(8).font('Helvetica-Bold').fillColor('#374151');
+      doc.text('Date', cols[0], tableY + 4);
+      doc.text('Revenue', cols[1], tableY + 4);
+      doc.text('Online', cols[2], tableY + 4);
+      doc.text('Offline', cols[3], tableY + 4);
+      doc.text('Refunds', cols[4], tableY + 4);
+      doc.text('Net', cols[5], tableY + 4);
+      doc.text('Txns', cols[6], tableY + 4);
+
+      doc.y = tableY + 22;
+
+      doc.fontSize(8).font('Helvetica').fillColor('#000000');
+      let rowIdx = 0;
       for (const d of report.daily) {
-        const y = doc.y + 5;
-        if (y > 750) { doc.addPage(); }
-        doc.text(d.date, cols[0], doc.y + 5);
-        doc.text(formatPaise(d.revenue), cols[1], doc.y);
-        doc.text(formatPaise(d.online), cols[2], doc.y);
-        doc.text(formatPaise(d.offline), cols[3], doc.y);
-        doc.text(formatPaise(d.refunds), cols[4], doc.y);
-        doc.text(formatPaise(d.revenue - d.refunds), cols[5], doc.y);
-        doc.text(String(d.count), cols[6], doc.y);
+        if (doc.y > 740) { doc.addPage(); }
+        const ry = doc.y;
+
+        // Alternating row background
+        if (rowIdx % 2 === 1) {
+          doc.save();
+          doc.rect(50, ry - 2, 495, 16).fill('#F9FAFB');
+          doc.restore();
+          doc.fillColor('#000000');
+        }
+
+        doc.text(d.date, cols[0], ry);
+        doc.text(formatPaise(d.revenue), cols[1], ry);
+        doc.fillColor('#10B981').text(formatPaise(d.online), cols[2], ry);
+        doc.fillColor('#3B82F6').text(formatPaise(d.offline), cols[3], ry);
+        doc.fillColor('#EF4444').text(d.refunds > 0 ? '-' + formatPaise(d.refunds) : '—', cols[4], ry);
+        doc.fillColor('#10B981').font('Helvetica-Bold').text(formatPaise(d.revenue - d.refunds), cols[5], ry);
+        doc.fillColor('#000000').font('Helvetica').text(String(d.count), cols[6], ry);
         doc.moveDown(0.3);
+        rowIdx++;
       }
     }
 
     // Footer
-    doc.fontSize(8).font('Helvetica')
+    doc.fontSize(8).font('Helvetica').fillColor('#9CA3AF')
       .text(`Generated on ${new Date().toLocaleString('en-IN')}`, 50, 770, { align: 'center' });
 
     doc.end();
@@ -96,9 +122,6 @@ export const ReportService = {
   /** Generate booking history CSV */
   async bookingHistoryCSV(prisma: PrismaClient, from: string, to: string): Promise<{ csv: string; filename: string }> {
     const bookings = await prisma.booking.findMany({
-      where: {
-        createdAt: { gte: new Date(`${from}T00:00:00`), lte: new Date(`${to}T23:59:59`) },
-      },
       include: {
         user: { select: { name: true, phone: true, email: true } },
         slot: { include: { facility: true } },
@@ -135,9 +158,6 @@ export const ReportService = {
   /** Generate booking history PDF */
   async bookingHistoryPDF(prisma: PrismaClient, from: string, to: string): Promise<{ stream: PDFKit.PDFDocument; filename: string }> {
     const bookings = await prisma.booking.findMany({
-      where: {
-        createdAt: { gte: new Date(`${from}T00:00:00`), lte: new Date(`${to}T23:59:59`) },
-      },
       include: {
         user: { select: { name: true, phone: true } },
         slot: { include: { facility: true } },
