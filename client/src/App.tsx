@@ -10,10 +10,12 @@ import DashboardPage from './pages/Dashboard';
 import BookingPage from './pages/Booking';
 import PaymentPage from './pages/Payment';
 import AdminPage from './pages/Admin';
+import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 
 function App() {
   return (
     <AuthProvider>
+      <PWAInstallPrompt />
       <Routes>
         {/* Public */}
         <Route path="/" element={<LandingPage />} />
