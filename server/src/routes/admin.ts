@@ -24,6 +24,9 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/reports/revenue/pdf', { preHandler: [authenticate, requireAdmin] }, ReportController.revenueReportPDF);
   fastify.get('/reports/bookings/pdf', { preHandler: [authenticate, requireAdmin] }, ReportController.bookingHistoryPDF);
   fastify.get('/reports/bookings/csv', { preHandler: [authenticate, requireAdmin] }, ReportController.bookingHistoryCSV);
+  fastify.get('/reports/overview/pdf', { preHandler: [authenticate, requireAdmin] }, ReportController.overviewReportPDF);
+  fastify.get('/reports/facilities/pdf', { preHandler: [authenticate, requireAdmin] }, ReportController.facilityUsagePDF);
+  fastify.get('/reports/facilities/csv', { preHandler: [authenticate, requireAdmin] }, ReportController.facilityUsageCSV);
   fastify.get('/users/export', { preHandler: [authenticate, requireAdmin] }, ReportController.userExportCSV);
   fastify.get('/payments/:id/verify', { preHandler: [authenticate, requireAdmin] }, AdminController.verifyPayment);
   fastify.get('/coupons', { preHandler: [authenticate, requireAdmin] }, AdminController.listCoupons);

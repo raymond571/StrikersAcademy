@@ -68,11 +68,19 @@ export function ReportsTab() {
     return acc;
   }, {});
 
-  const facilityCounts = bookings.reduce<Record<string, { name: string; count: number; revenue: number }>>((acc, b) => {
+  const facilityCounts = bookings.reduce<Record<string, { name: string; count: number; online: number; offline: number; onlineRevenue: number; offlineRevenue: number; revenue: number }>>((acc, b) => {
     const fname = b.slot?.facility?.name ?? 'Unknown';
-    if (!acc[fname]) acc[fname] = { name: fname, count: 0, revenue: 0 };
+    if (!acc[fname]) acc[fname] = { name: fname, count: 0, online: 0, offline: 0, onlineRevenue: 0, offlineRevenue: 0, revenue: 0 };
     acc[fname].count += 1;
-    if (b.payment?.status === 'SUCCESS') acc[fname].revenue += b.payment.amount;
+    const amt = b.payment?.status === 'SUCCESS' ? b.payment.amount : 0;
+    if (b.paymentMethod === 'ONLINE') {
+      acc[fname].online += 1;
+      acc[fname].onlineRevenue += amt;
+    } else {
+      acc[fname].offline += 1;
+      acc[fname].offlineRevenue += amt;
+    }
+    acc[fname].revenue += amt;
     return acc;
   }, {});
 
@@ -108,28 +116,6 @@ export function ReportsTab() {
         <button onClick={generateReport} disabled={loading} className="btn-primary">
           {loading ? 'Loading...' : 'Generate'}
         </button>
-        {revenue && (
-          <button
-            onClick={async () => {
-              try {
-                const res = await fetch(`/api/admin/reports/revenue/pdf?from=${from}&to=${to}`, { credentials: 'include' });
-                if (!res.ok) { alert('Failed to download'); return; }
-                const blob = await res.blob();
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `revenue-${from}-to-${to}.pdf`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-              } catch { alert('Failed to download PDF'); }
-            }}
-            className="btn-secondary"
-          >
-            Download PDF
-          </button>
-        )}
       </div>
 
       {/* Section switcher */}
@@ -150,6 +136,28 @@ export function ReportsTab() {
       {/* ── Overview ──────────────────────────────── */}
       {section === 'overview' && stats && (
         <div className="space-y-6">
+          <div className="flex justify-end">
+            <button
+              onClick={async () => {
+                try {
+                  const res = await fetch(`/api/admin/reports/overview/pdf?from=${from}&to=${to}`, { credentials: 'include' });
+                  if (!res.ok) { alert('Failed to download'); return; }
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `overview-${from}-to-${to}.pdf`;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                } catch { alert('Failed to download PDF'); }
+              }}
+              className="btn-secondary text-xs"
+            >
+              Download PDF
+            </button>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div className="card">
               <p className="text-sm text-gray-500">All-Time Bookings</p>
@@ -196,6 +204,28 @@ export function ReportsTab() {
       {/* ── Revenue ───────────────────────────────── */}
       {section === 'revenue' && revenue && (
         <div className="space-y-4">
+          <div className="flex justify-end">
+            <button
+              onClick={async () => {
+                try {
+                  const res = await fetch(`/api/admin/reports/revenue/pdf?from=${from}&to=${to}`, { credentials: 'include' });
+                  if (!res.ok) { alert('Failed to download'); return; }
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `revenue-${from}-to-${to}.pdf`;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                } catch { alert('Failed to download PDF'); }
+              }}
+              className="btn-secondary text-xs"
+            >
+              Download PDF
+            </button>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div className="card">
               <p className="text-sm text-gray-500">Gross Revenue</p>
@@ -369,7 +399,51 @@ export function ReportsTab() {
       {/* ── Facility Usage ─────────────────────────── */}
       {section === 'facilities' && (
         <div className="card overflow-x-auto">
-          <h3 className="text-base font-semibold mb-3">Facility Performance (period)</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-base font-semibold">Facility Performance (period)</h3>
+            <div className="flex gap-2">
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await fetch(`/api/admin/reports/facilities/csv?from=${from}&to=${to}`, { credentials: 'include' });
+                    if (!res.ok) { alert('Failed'); return; }
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `facility-usage-${from}-to-${to}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                  } catch { alert('Failed to download'); }
+                }}
+                className="btn-secondary text-xs"
+              >
+                Export CSV
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await fetch(`/api/admin/reports/facilities/pdf?from=${from}&to=${to}`, { credentials: 'include' });
+                    if (!res.ok) { alert('Failed'); return; }
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `facility-usage-${from}-to-${to}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                  } catch { alert('Failed to download'); }
+                }}
+                className="btn-secondary text-xs"
+              >
+                Download PDF
+              </button>
+            </div>
+          </div>
           {Object.keys(facilityCounts).length === 0 ? (
             <p className="text-sm text-gray-500">No booking data</p>
           ) : (
@@ -377,8 +451,12 @@ export function ReportsTab() {
               <thead>
                 <tr className="border-b text-left text-gray-500">
                   <th className="pb-2 pr-4">Facility</th>
-                  <th className="pb-2 pr-4 text-right">Bookings</th>
-                  <th className="pb-2 text-right">Revenue</th>
+                  <th className="pb-2 pr-4 text-right">Total Bookings</th>
+                  <th className="pb-2 pr-4 text-right">Online</th>
+                  <th className="pb-2 pr-4 text-right">Offline</th>
+                  <th className="pb-2 pr-4 text-right">Online Revenue</th>
+                  <th className="pb-2 pr-4 text-right">Offline Revenue</th>
+                  <th className="pb-2 text-right">Total Revenue</th>
                 </tr>
               </thead>
               <tbody>
@@ -388,6 +466,10 @@ export function ReportsTab() {
                     <tr key={f.name} className="border-b border-gray-100">
                       <td className="py-2 pr-4 font-medium text-gray-900">{f.name}</td>
                       <td className="py-2 pr-4 text-right">{f.count}</td>
+                      <td className="py-2 pr-4 text-right text-green-600">{f.online}</td>
+                      <td className="py-2 pr-4 text-right text-blue-600">{f.offline}</td>
+                      <td className="py-2 pr-4 text-right text-green-600">{formatPaise(f.onlineRevenue)}</td>
+                      <td className="py-2 pr-4 text-right text-blue-600">{formatPaise(f.offlineRevenue)}</td>
                       <td className="py-2 text-right font-medium text-emerald-600">{formatPaise(f.revenue)}</td>
                     </tr>
                   ))}

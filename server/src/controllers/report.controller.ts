@@ -54,6 +54,48 @@ export class ReportController {
     return reply.send(csv);
   }
 
+  /** GET /api/admin/reports/overview/pdf?from=...&to=... */
+  static async overviewReportPDF(request: FastifyRequest, reply: FastifyReply) {
+    const parsed = dateRangeSchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.status(400).send({ success: false, error: 'from and to dates required (YYYY-MM-DD)', statusCode: 400 });
+    }
+    const { stream, filename } = await ReportService.overviewReportPDF(
+      request.server.prisma, parsed.data.from, parsed.data.to,
+    );
+    reply.header('Content-Type', 'application/pdf');
+    reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+    return reply.send(stream);
+  }
+
+  /** GET /api/admin/reports/facilities/pdf?from=...&to=... */
+  static async facilityUsagePDF(request: FastifyRequest, reply: FastifyReply) {
+    const parsed = dateRangeSchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.status(400).send({ success: false, error: 'from and to dates required (YYYY-MM-DD)', statusCode: 400 });
+    }
+    const { stream, filename } = await ReportService.facilityUsagePDF(
+      request.server.prisma, parsed.data.from, parsed.data.to,
+    );
+    reply.header('Content-Type', 'application/pdf');
+    reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+    return reply.send(stream);
+  }
+
+  /** GET /api/admin/reports/facilities/csv?from=...&to=... */
+  static async facilityUsageCSV(request: FastifyRequest, reply: FastifyReply) {
+    const parsed = dateRangeSchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.status(400).send({ success: false, error: 'from and to dates required (YYYY-MM-DD)', statusCode: 400 });
+    }
+    const { csv, filename } = await ReportService.facilityUsageCSV(
+      request.server.prisma, parsed.data.from, parsed.data.to,
+    );
+    reply.header('Content-Type', 'text/csv');
+    reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+    return reply.send(csv);
+  }
+
   /** GET /api/admin/users/export */
   static async userExportCSV(request: FastifyRequest, reply: FastifyReply) {
     const { csv, filename } = await ReportService.userExportCSV(request.server.prisma);
