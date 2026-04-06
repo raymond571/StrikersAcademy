@@ -153,7 +153,7 @@ async function main() {
 
   let slotsCreated = 0;
   for (const facility of facilities) {
-    const capacity = facility.type === 'NET' ? 1 : 2;
+    const capacity = 1; // One booking per slot for all facility types
     for (const date of dates) {
       for (const ts of timeSlots) {
         await prisma.slot.upsert({
@@ -210,7 +210,7 @@ async function main() {
   console.log(`\nSlots created/upserted: ${slotsCreated}`);
   console.log(`  ${facilities.length} facilities × ${dates.length} days × ${timeSlots.length} time slots`);
   console.log(`  Dates: ${dates[0]} to ${dates[dates.length - 1]}`);
-  console.log(`  NET capacity: 1, TURF capacity: 2`);
+  console.log(`  All slots capacity: 1 (one booking per slot)`);
   console.log('─────────────────────────────────────────');
 }
 
