@@ -3,6 +3,18 @@
 # StrikersAcademy — Automated VPS Setup Script
 # Run as root (or with sudo) on a fresh Ubuntu 22.04/24.04 VPS.
 # Usage: bash setup-vps.sh
+#
+# LESSONS LEARNED (real deployment):
+#   - npm ci fails with TAR_ENTRY_ERROR if stale node_modules exist
+#   - Prisma migration_lock.toml mismatches sqlite->postgresql;
+#     must delete migrations and use `prisma db push` instead
+#   - Deploy user needs .pgpass for passwordless pg_dump
+#   - Git "dubious ownership" requires safe.directory config
+#   - PM2 script path is dist/server/src/index.js (tsc nested output)
+#   - Prisma client needs regeneration after every git reset --hard
+#   - Seed script needs env vars exported manually outside PM2
+#   - Server tsconfig must exclude *.test.ts from build
+#   - Client tsconfig must exclude test files, needs vite-env.d.ts
 # ─────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -40,7 +52,7 @@ DB_NAME="strikersacademy"
 APP_DIR="/var/www/strickersacademy"
 DEPLOY_USER="deploy"
 REPO_URL="https://github.com/raymond571/StrikersAcademy.git"
-BRANCH="add-ssl"
+BRANCH="master"
 
 ask "Enter a password for PostgreSQL user '${DB_USER}' (or press Enter to auto-generate): "
 read -r DB_PASSWORD
@@ -60,7 +72,7 @@ read -r
 # ─────────────────────────────────────────────────────────────
 # STEP 1: System Updates
 # ─────────────────────────────────────────────────────────────
-header "1/19  System Updates"
+header "1/20  System Updates"
 
 info "Setting timezone to Asia/Kolkata (IST)..."
 timedatectl set-timezone Asia/Kolkata
@@ -75,7 +87,7 @@ success "System updated."
 # ─────────────────────────────────────────────────────────────
 # STEP 2: Create Deploy User
 # ─────────────────────────────────────────────────────────────
-header "2/19  Create Deploy User"
+header "2/20  Create Deploy User"
 
 if id "${DEPLOY_USER}" &>/dev/null; then
     warn "User '${DEPLOY_USER}' already exists, skipping creation."
@@ -98,7 +110,7 @@ fi
 # ─────────────────────────────────────────────────────────────
 # STEP 3: Firewall (UFW)
 # ─────────────────────────────────────────────────────────────
-header "3/19  Firewall (UFW)"
+header "3/20  Firewall (UFW)"
 
 if command -v ufw &>/dev/null; then
     info "Configuring UFW..."
@@ -124,7 +136,7 @@ fi
 # ─────────────────────────────────────────────────────────────
 # STEP 4: Install Essentials
 # ─────────────────────────────────────────────────────────────
-header "4/19  Install Essentials"
+header "4/20  Install Essentials"
 
 info "Installing curl, git, build-essential, unzip..."
 apt install -y curl git build-essential unzip
@@ -133,7 +145,7 @@ success "Essentials installed."
 # ─────────────────────────────────────────────────────────────
 # STEP 5: Install Node.js v20 LTS
 # ─────────────────────────────────────────────────────────────
-header "5/19  Install Node.js v20 LTS"
+header "5/20  Install Node.js v20 LTS"
 
 if command -v node &>/dev/null && node -v | grep -q "^v20"; then
     warn "Node.js $(node -v) is already installed, skipping."
@@ -149,7 +161,7 @@ info "Node: $(node -v), npm: $(npm -v)"
 # ─────────────────────────────────────────────────────────────
 # STEP 6: Install PM2
 # ─────────────────────────────────────────────────────────────
-header "6/19  Install PM2"
+header "6/20  Install PM2"
 
 if command -v pm2 &>/dev/null; then
     warn "PM2 is already installed, skipping."
@@ -167,7 +179,7 @@ success "PM2 log directory created at /var/log/pm2."
 # ─────────────────────────────────────────────────────────────
 # STEP 7: Install PostgreSQL
 # ─────────────────────────────────────────────────────────────
-header "7/19  Install PostgreSQL"
+header "7/20  Install PostgreSQL"
 
 if command -v psql &>/dev/null; then
     warn "PostgreSQL is already installed, skipping installation."
@@ -203,7 +215,7 @@ fi
 # ─────────────────────────────────────────────────────────────
 # STEP 8: Install Nginx
 # ─────────────────────────────────────────────────────────────
-header "8/19  Install Nginx"
+header "8/20  Install Nginx"
 
 if command -v nginx &>/dev/null; then
     warn "Nginx is already installed, skipping."
@@ -223,7 +235,7 @@ success "Nginx enabled, default site removed."
 # ─────────────────────────────────────────────────────────────
 # STEP 9: Create App Directory
 # ─────────────────────────────────────────────────────────────
-header "9/19  Create App Directory"
+header "9/20  Create App Directory"
 
 if [[ -d "$APP_DIR" ]]; then
     warn "App directory ${APP_DIR} already exists."
@@ -238,7 +250,7 @@ success "Ownership set to ${DEPLOY_USER}."
 # ─────────────────────────────────────────────────────────────
 # STEP 10: Clone the Repo
 # ─────────────────────────────────────────────────────────────
-header "10/19  Clone Repository"
+header "10/20  Clone Repository"
 
 if [[ -d "${APP_DIR}/.git" ]]; then
     warn "Repository already cloned. Pulling latest..."
@@ -253,9 +265,19 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────
+# STEP 10b: Fix Git Safe Directory & Permissions
+# GOTCHA: Git refuses to operate in a directory owned by a
+# different user. Both root and deploy user need this.
+# ─────────────────────────────────────────────────────────────
+info "Marking repo as safe directory for git..."
+git config --global --add safe.directory "$APP_DIR"
+sudo -u ${DEPLOY_USER} git config --global --add safe.directory "$APP_DIR"
+success "Git safe.directory configured for root and ${DEPLOY_USER}."
+
+# ─────────────────────────────────────────────────────────────
 # STEP 11: Setup SSL Directory
 # ─────────────────────────────────────────────────────────────
-header "11/19  Setup SSL Directory"
+header "11/20  Setup SSL Directory"
 
 mkdir -p /etc/ssl/cloudflare
 success "Created /etc/ssl/cloudflare/"
@@ -281,7 +303,7 @@ echo -e "  ${CYAN}5. Run: chmod 644 /etc/ssl/cloudflare/origin.pem${NC}"
 # ─────────────────────────────────────────────────────────────
 # STEP 12: Copy Nginx Configs
 # ─────────────────────────────────────────────────────────────
-header "12/19  Copy Nginx Configs"
+header "12/20  Copy Nginx Configs"
 
 info "Copying site config..."
 cp "${APP_DIR}/deployment/nginx/strickersacademy.conf" /etc/nginx/sites-available/strickersacademy
@@ -296,7 +318,7 @@ success "Cloudflare origin-pull snippet installed."
 # ─────────────────────────────────────────────────────────────
 # STEP 13: Setup .env File
 # ─────────────────────────────────────────────────────────────
-header "13/19  Setup Environment File"
+header "13/20  Setup Environment File"
 
 ENV_FILE="${APP_DIR}/server/.env"
 
@@ -331,32 +353,64 @@ echo -e "  ${CYAN}- RAZORPAY_WEBHOOK_SECRET${NC}"
 
 # ─────────────────────────────────────────────────────────────
 # STEP 14: Install npm Dependencies
+# GOTCHA: `npm ci` fails with TAR_ENTRY_ERROR / ENOTEMPTY if
+# stale node_modules directories exist. Always clean first.
+# GOTCHA: Do NOT use `--omit=dev` — TypeScript is a devDep
+# needed for the build step.
 # ─────────────────────────────────────────────────────────────
-header "14/19  Install npm Dependencies"
+header "14/20  Install npm Dependencies"
+
+cd "$APP_DIR"
+
+info "Cleaning stale node_modules (prevents TAR_ENTRY_ERROR)..."
+rm -rf node_modules server/node_modules client/node_modules shared/node_modules
+success "Cleaned node_modules."
 
 info "Running npm ci in ${APP_DIR}..."
-cd "$APP_DIR"
 sudo -u ${DEPLOY_USER} npm ci
-success "npm dependencies installed."
+success "npm dependencies installed (including devDeps for build)."
 
 # ─────────────────────────────────────────────────────────────
-# STEP 15: Run Prisma Migrations
+# STEP 15: Prisma — Swap Provider & Push Schema
+# GOTCHA: The repo uses sqlite for dev. Production needs postgresql.
+#   - migration_lock.toml says sqlite, so `prisma migrate deploy` fails
+#   - Solution: delete migrations dir, swap provider, use `prisma db push`
+# GOTCHA: After every `git reset --hard`, schema reverts to sqlite.
+#   The deploy script handles this automatically.
 # ─────────────────────────────────────────────────────────────
-header "15/19  Run Prisma Migrations"
+header "15/20  Prisma — Swap Provider & Push Schema"
+
+cd "$APP_DIR"
+
+info "Swapping Prisma provider from sqlite to postgresql..."
+sed -i 's/provider = "sqlite"/provider = "postgresql"/' server/prisma/schema.prisma
+success "Prisma provider set to postgresql."
+
+info "Removing sqlite migrations (if any) to avoid lock mismatch..."
+rm -rf server/prisma/migrations
+success "Migrations directory removed."
 
 info "Generating Prisma client..."
-cd "$APP_DIR"
 sudo -u ${DEPLOY_USER} npm run db:generate --workspace=server
+success "Prisma client generated."
 
-info "Running prisma migrate deploy..."
+info "Pushing schema to database (prisma db push)..."
 cd "${APP_DIR}/server"
-sudo -u ${DEPLOY_USER} npx prisma migrate deploy
-success "Database migrations applied."
+sudo -u ${DEPLOY_USER} bash -c "export \$(grep -v '^#' .env | xargs) && npx prisma db push --accept-data-loss" 2>/dev/null \
+  || sudo -u ${DEPLOY_USER} bash -c "export \$(grep -v '^#' .env | xargs) && npx prisma db push"
+cd "$APP_DIR"
+success "Database schema synced via prisma db push."
 
 # ─────────────────────────────────────────────────────────────
 # STEP 16: Build the App
+# GOTCHA: Server tsconfig must exclude *.test.ts files.
+# GOTCHA: Client tsconfig must exclude test files and needs
+#   vite-env.d.ts for import.meta.env type support.
+# GOTCHA: PM2 script path is dist/server/src/index.js (not
+#   dist/index.js) because tsc outputs nested structure due to
+#   shared workspace tsconfig include paths.
 # ─────────────────────────────────────────────────────────────
-header "16/19  Build the App"
+header "16/20  Build the App"
 
 cd "$APP_DIR"
 
@@ -373,9 +427,26 @@ sudo -u ${DEPLOY_USER} npm run build --workspace=client
 success "Client built."
 
 # ─────────────────────────────────────────────────────────────
-# STEP 17: Start with PM2
+# STEP 17: Fix Permissions (CRITICAL)
+# GOTCHA: Root runs this script, but deploy user runs PM2 and
+# subsequent deploys. ALL these directories must be owned by
+# the deploy user or you get EACCES errors everywhere.
 # ─────────────────────────────────────────────────────────────
-header "17/19  Start with PM2"
+header "17/20  Fix Permissions"
+
+info "Setting ownership for deploy user on all required directories..."
+chown -R ${DEPLOY_USER}:${DEPLOY_USER} "$APP_DIR"
+chown -R ${DEPLOY_USER}:${DEPLOY_USER} /var/log/pm2/
+mkdir -p /home/${DEPLOY_USER}/.pm2/logs /home/${DEPLOY_USER}/.pm2/pids /home/${DEPLOY_USER}/.pm2/modules
+chown -R ${DEPLOY_USER}:${DEPLOY_USER} /home/${DEPLOY_USER}/.pm2
+mkdir -p /home/${DEPLOY_USER}/.npm
+chown -R ${DEPLOY_USER}:${DEPLOY_USER} /home/${DEPLOY_USER}/.npm
+success "Permissions fixed for: ${APP_DIR}, /var/log/pm2/, ~/.pm2, ~/.npm"
+
+# ─────────────────────────────────────────────────────────────
+# STEP 18: Start with PM2
+# ─────────────────────────────────────────────────────────────
+header "18/20  Start with PM2"
 
 info "Starting app with PM2..."
 cd "$APP_DIR"
@@ -397,9 +468,9 @@ env PATH=$PATH:/usr/bin pm2 startup systemd -u ${DEPLOY_USER} --hp /home/${DEPLO
 success "PM2 startup configured."
 
 # ─────────────────────────────────────────────────────────────
-# STEP 18: Reload Nginx & Health Check
+# STEP 19: Reload Nginx & Health Check
 # ─────────────────────────────────────────────────────────────
-header "18/19  Nginx Reload & Health Check"
+header "19/20  Nginx Reload & Health Check"
 
 info "Testing Nginx configuration..."
 if nginx -t 2>&1; then
@@ -425,9 +496,9 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────
-# STEP 19: Database Backup Cron
+# STEP 20: Database Backup Cron
 # ─────────────────────────────────────────────────────────────
-header "19/19  Database Backup Cron"
+header "20/20  Database Backup Cron"
 
 BACKUP_DIR="/var/backups/strikersacademy"
 BACKUP_SCRIPT="${APP_DIR}/deployment/backup-db.sh"
@@ -438,7 +509,10 @@ info "Setting up daily database backup..."
 # Create backup directory and log file
 mkdir -p "$BACKUP_DIR"
 touch "$BACKUP_LOG"
-success "Created ${BACKUP_DIR} and ${BACKUP_LOG}"
+# GOTCHA: deploy user needs ownership of backup dir and log
+chown -R ${DEPLOY_USER}:${DEPLOY_USER} "$BACKUP_DIR"
+chown ${DEPLOY_USER}:${DEPLOY_USER} "$BACKUP_LOG"
+success "Created ${BACKUP_DIR} and ${BACKUP_LOG} (owned by ${DEPLOY_USER})"
 
 # Make scripts executable
 chmod +x "${APP_DIR}/deployment/backup-db.sh"
@@ -446,6 +520,9 @@ chmod +x "${APP_DIR}/deployment/restore-db.sh"
 success "Backup and restore scripts made executable."
 
 # Setup .pgpass for passwordless pg_dump (root + deploy user)
+# GOTCHA: Both root and deploy user need .pgpass for pg_dump to work
+# without prompting for a password. The deploy user runs the cron
+# job and GitHub Actions backup; root may run manual restores.
 for PGPASS_HOME in "/root" "/home/${DEPLOY_USER}"; do
     PGPASS_FILE="${PGPASS_HOME}/.pgpass"
     if [[ ! -f "$PGPASS_FILE" ]]; then
@@ -509,6 +586,7 @@ echo -e "  .env file:       ${BOLD}${ENV_FILE}${NC}"
 echo -e "  Nginx config:    ${BOLD}/etc/nginx/sites-available/strickersacademy${NC}"
 echo -e "  SSL certs dir:   ${BOLD}/etc/ssl/cloudflare/${NC}"
 echo -e "  PM2 logs:        ${BOLD}/var/log/pm2/${NC}"
+echo -e "  PM2 script:      ${BOLD}dist/server/src/index.js${NC} (nested tsc output)"
 echo -e "  DB backups:      ${BOLD}/var/backups/strikersacademy/${NC} (daily at 00:00, 30-day retention)"
 echo -e "  Backup log:      ${BOLD}/var/log/strikersacademy-backup.log${NC}"
 echo ""
@@ -531,13 +609,30 @@ echo -e "     ${CYAN}sudo nginx -t && sudo systemctl reload nginx${NC}"
 echo ""
 echo -e "  ${YELLOW}4.${NC} Configure Cloudflare Dashboard:"
 echo -e "     - SSL/TLS mode: ${BOLD}Full (strict)${NC}"
-echo -e "     - Authenticated Origin Pulls: ${BOLD}On${NC}"
+echo -e "     - Authenticated Origin Pulls: ${BOLD}On${NC}  (REQUIRED or you get 400 errors)"
 echo -e "     - Always Use HTTPS: ${BOLD}On${NC}"
-echo -e "     - See SETUP.md for full Cloudflare settings"
+echo -e "     - Delete ALL old/stale DNS A records (e.g. from GoDaddy)"
+echo -e "     - See CICD-SETUP.md for full Cloudflare settings"
 echo ""
-echo -e "  ${YELLOW}5.${NC} For future deployments, run:"
+echo -e "  ${YELLOW}5.${NC} Seed the database (optional, for initial data):"
+echo -e "     ${CYAN}cd ${APP_DIR}/server${NC}"
+echo -e "     ${CYAN}export \$(grep -v '^#' .env | xargs)${NC}"
+echo -e "     ${CYAN}npx tsx prisma/seed.ts${NC}"
+echo ""
+echo -e "  ${YELLOW}6.${NC} For future deployments, run:"
 echo -e "     ${CYAN}su - ${DEPLOY_USER}${NC}"
 echo -e "     ${CYAN}cd ${APP_DIR} && bash deployment/deploy.sh${NC}"
+echo ""
+
+echo -e "${RED}${BOLD}Common Gotchas (see CICD-SETUP.md Troubleshooting for full list)${NC}"
+echo -e "─────────────────────────────────────────"
+echo -e "  - ${CYAN}npm ci TAR_ENTRY_ERROR${NC}: rm -rf node_modules first"
+echo -e "  - ${CYAN}Prisma migrate deploy fails${NC}: Use prisma db push (already done above)"
+echo -e "  - ${CYAN}Prisma client wrong provider after git reset${NC}: sed swap + prisma generate"
+echo -e "  - ${CYAN}400 No SSL cert error${NC}: Enable Cloudflare Authenticated Origin Pulls"
+echo -e "  - ${CYAN}Test API directly${NC}: curl http://localhost:5000/api/auth/me (skip Nginx SSL)"
+echo -e "  - ${CYAN}Seed outside PM2${NC}: export \$(grep -v '^#' .env | xargs) first"
+echo -e "  - ${CYAN}PM2 Script not found${NC}: Path is dist/server/src/index.js (not dist/index.js)"
 echo ""
 
 echo -e "${GREEN}${BOLD}Save the DB password shown above — it won't be displayed again.${NC}"

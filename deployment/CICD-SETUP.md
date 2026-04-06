@@ -3,6 +3,9 @@
 Complete step-by-step guide to connect GitHub Actions, Hetzner VPS, and Cloudflare.
 **Last updated:** 2026-04-06 (verified working deployment)
 
+> **Template-ready:** This document captures every issue found during real deployment.
+> Search for "GOTCHA" to find all hard-won lessons.
+
 ---
 
 ## Prerequisites
@@ -33,13 +36,13 @@ The GitHub repo is **public**. This is fine because:
 
 ## Step 1: Generate SSH Deploy Key
 
-On your local machine (Windows — leave passphrase empty when prompted):
+On your local machine (Windows):
 
 ```bash
 ssh-keygen -t ed25519 -C "github-actions-deploy" -f github_deploy_key
 ```
 
-When asked `Enter passphrase` — press **Enter** twice (empty).
+**GOTCHA (Windows):** The `-N ""` flag does NOT work on Windows `ssh-keygen`. When asked `Enter passphrase`, just press **Enter** twice for empty passphrase.
 
 Creates:
 - `github_deploy_key` — private key (goes to GitHub)
@@ -48,6 +51,8 @@ Creates:
 ---
 
 ## Step 2: VPS User + SSH Key Setup
+
+**GOTCHA:** The deploy user must exist BEFORE you try to add the SSH key.
 
 ```bash
 ssh root@<YOUR_VPS_IP>
@@ -72,8 +77,14 @@ chown -R deploy:deploy /home/deploy/.pm2
 chown -R deploy:deploy /home/deploy/.npm
 chown -R deploy:deploy /var/log/pm2/
 
-# Mark repo as safe directory
+# GOTCHA: deploy user needs ownership of app dir, backup dir, and log
+chown -R deploy:deploy /var/www/strickersacademy
+chown -R deploy:deploy /var/backups/strikersacademy
+chown deploy:deploy /var/log/strikersacademy-backup.log
+
+# GOTCHA: Git "dubious ownership" error if repo owned by different user
 git config --global --add safe.directory /var/www/strickersacademy
+sudo -u deploy git config --global --add safe.directory /var/www/strickersacademy
 ```
 
 Test: `ssh -i github_deploy_key deploy@<YOUR_VPS_IP> "echo connected"`
@@ -124,7 +135,7 @@ Use test Razorpay keys (`rzp_test_*`) and different JWT/Cookie secrets.
 
 ### 6a. DNS Records
 
-**Delete any old/stale A records** (e.g. from GoDaddy). Keep ONLY:
+**GOTCHA:** Delete any old/stale A records (e.g. from GoDaddy or previous hosting). Keep ONLY the VPS IP. Stale records cause intermittent routing failures.
 
 | Type | Name | Content | Proxy |
 |------|------|---------|-------|
@@ -151,7 +162,13 @@ sudo chmod 600 /etc/ssl/cloudflare/origin-key.pem
 
 SSL/TLS > Origin Server > **Authenticated Origin Pulls > ON**
 
-**This is REQUIRED** — without it you get `400 No required SSL certificate was sent`.
+**GOTCHA: This is REQUIRED** — without it you get `400 No required SSL certificate was sent` on every request through Cloudflare.
+
+**GOTCHA:** When Authenticated Origin Pulls is ON, `curl https://strickersacademy.in` from the VPS itself will also get 400. This is expected. Test the API directly:
+```bash
+curl http://localhost:5000/api/auth/me
+# Expected: {"success":false,"error":"Unauthorised — please log in","statusCode":401}
+```
 
 ### 6e. Edge Settings
 
@@ -178,45 +195,38 @@ bash deployment/setup-vps.sh
 
 ### After setup-vps.sh:
 
+The script now handles all of these steps automatically:
+- Cleans node_modules before npm ci (prevents TAR_ENTRY_ERROR)
+- Swaps Prisma provider from sqlite to postgresql
+- Deletes sqlite migrations and uses `prisma db push`
+- Fixes permissions for deploy user
+- Sets up .pgpass for passwordless pg_dump
+- Configures git safe.directory
+
+**Manual steps remaining after the script:**
+
 ```bash
 cd /var/www/strickersacademy
 
-# 1. Fix ownership (root ran setup, deploy user needs access)
-chown -R deploy:deploy /var/www/strickersacademy
-chown -R deploy:deploy /var/log/pm2/
-chown -R deploy:deploy /home/deploy/.pm2
-chown -R deploy:deploy /home/deploy/.npm
+# 1. Paste Cloudflare Origin Certificate (if not done yet)
+sudo nano /etc/ssl/cloudflare/origin.pem
+sudo nano /etc/ssl/cloudflare/origin-key.pem
+sudo chmod 600 /etc/ssl/cloudflare/origin-key.pem
+sudo chmod 644 /etc/ssl/cloudflare/origin.pem
 
-# 2. Clean install
-rm -rf node_modules server/node_modules client/node_modules shared/node_modules
-npm ci
+# 2. Edit .env and fill in remaining secrets (if not done yet)
+sudo -u deploy nano server/.env
+# Fill in: JWT_SECRET, COOKIE_SECRET, RAZORPAY keys
 
-# 3. Setup PostgreSQL schema (NOT migrations — we use db push)
-sed -i 's/provider = "sqlite"/provider = "postgresql"/' server/prisma/schema.prisma
-cd server
-rm -rf prisma/migrations
-npx prisma db push
-npx prisma generate
-cd ..
+# 3. Restart after updating certs and .env
+sudo -u deploy pm2 restart strikers-api
+sudo nginx -t && sudo systemctl reload nginx
 
-# 4. Seed the database
+# 4. (Optional) Seed the database
 cd server
 export $(grep -v '^#' .env | xargs)
 npx tsx prisma/seed.ts
 cd ..
-
-# 5. Build
-npm run build --workspace=shared
-npm run build --workspace=server
-npm run build --workspace=client
-
-# 6. Start PM2 as deploy user
-sudo -u deploy pm2 start deployment/ecosystem.config.js
-sudo -u deploy pm2 save
-pm2 startup systemd
-
-# 7. Reload Nginx
-sudo nginx -t && sudo systemctl reload nginx
 ```
 
 ### Verify:
@@ -249,6 +259,8 @@ Visit https://strickersacademy.in
 
 Actions tab > **Deploy** > **Run workflow** > pick environment > **Run**
 
+**GOTCHA:** The default branch must be `master` (not a feature branch like `phase-4`) for `workflow_dispatch` to show in the Actions UI.
+
 ### Pipeline Flow
 
 ```
@@ -278,6 +290,16 @@ Deploy (.github/workflows/deploy.yml)
          |- Nginx reload
 ```
 
+### GitHub Actions Workflow Gotchas
+
+| Issue | Fix |
+|-------|-----|
+| CI workflow not callable from deploy | Add `workflow_call:` trigger to ci.yml so deploy.yml can use it as a reusable workflow |
+| Backup/restore workflows not visible | Add `push:` trigger (not just `schedule`/`workflow_dispatch`). GitHub must see the workflow file on the default branch via a push event to discover it |
+| `workflow_dispatch` not showing in UI | Default branch must be `master`. If your default is a feature branch, the button won't appear |
+| Deploy times out | Add `command_timeout: 10m` to the SSH action. npm ci + full build can take 5+ minutes |
+| SSH auth fails | Verify `VPS_SSH_KEY` is the **private** key (not `.pub`), public key is in `/home/deploy/.ssh/authorized_keys` |
+
 ---
 
 ## Architecture
@@ -299,6 +321,10 @@ PM2 > Fastify (port 5000, localhost only)
     v
 PostgreSQL (port 5432, localhost only)
 ```
+
+**Nginx notes:**
+- Static files served from `/var/www/strickersacademy/client/dist`
+- Cloudflare Authenticated Origin Pulls causes "400 No required SSL certificate" when curling locally via HTTPS — this is expected, test API directly on port 5000
 
 ---
 
@@ -375,11 +401,14 @@ bash deployment/setup-vps.sh
 ## Troubleshooting
 
 ### `npm ci` fails with TAR_ENTRY_ERROR / ENOTEMPTY
-Stale `node_modules`. The deploy script now cleans these automatically. Manual fix:
+**GOTCHA:** Stale `node_modules` directories. The deploy script now cleans these automatically. Manual fix:
 ```bash
 rm -rf node_modules server/node_modules client/node_modules shared/node_modules
 npm ci
 ```
+
+### `npm ci --omit=dev` breaks the build
+**GOTCHA:** TypeScript is a devDependency. If you omit dev dependencies, `tsc` is not available and the build fails. Always use `npm ci` without `--omit=dev`.
 
 ### PM2 permission errors (EACCES)
 PM2 directories owned by wrong user:
@@ -387,6 +416,7 @@ PM2 directories owned by wrong user:
 chown -R deploy:deploy /home/deploy/.pm2
 chown -R deploy:deploy /var/log/pm2/
 chown -R deploy:deploy /home/deploy/.npm
+chown -R deploy:deploy /var/www/strickersacademy
 ```
 
 ### npm cache permission error
@@ -396,8 +426,11 @@ chown -R deploy:deploy /home/deploy/.npm
 ```
 
 ### Git "dubious ownership" error
+**GOTCHA:** Happens when root cloned the repo but deploy user runs git operations.
 ```bash
 git config --global --add safe.directory /var/www/strickersacademy
+# Run as BOTH root and deploy user:
+sudo -u deploy git config --global --add safe.directory /var/www/strickersacademy
 ```
 
 ### Git "Permission denied" on fetch
@@ -406,10 +439,10 @@ chown -R deploy:deploy /var/www/strickersacademy
 ```
 
 ### Prisma "provider does not match migration_lock.toml"
-SQLite migrations conflict with PostgreSQL. Already fixed — migrations removed from repo, deploy uses `prisma db push`.
+**GOTCHA:** The repo uses sqlite for dev. migration_lock.toml says sqlite, but production uses postgresql. Solution: delete the migrations directory entirely and use `prisma db push` instead of `prisma migrate deploy`. The deploy script handles this automatically.
 
 ### Prisma "DATABASE_URL not found" (seed/CLI)
-When running prisma commands manually:
+**GOTCHA:** When running Prisma commands manually (outside PM2), the .env file is not auto-loaded. You must export the variables first:
 ```bash
 cd /var/www/strickersacademy/server
 export $(grep -v '^#' .env | xargs)
@@ -417,7 +450,7 @@ npx tsx prisma/seed.ts
 ```
 
 ### Prisma client not initialized after git reset
-`git reset --hard` reverts schema to sqlite. Deploy script fixes this automatically. Manual:
+**GOTCHA:** `git reset --hard` reverts schema.prisma to sqlite provider. The generated Prisma client is now wrong. Deploy script fixes this automatically. Manual fix:
 ```bash
 sed -i 's/provider = "sqlite"/provider = "postgresql"/' server/prisma/schema.prisma
 npx prisma generate --schema=server/prisma/schema.prisma
@@ -425,10 +458,18 @@ pm2 restart strikers-api
 ```
 
 ### PM2 "Script not found: dist/index.js"
-tsc outputs to `dist/server/src/` due to shared workspace include. Already fixed in `ecosystem.config.js` (`script: 'dist/server/src/index.js'`).
+**GOTCHA:** tsc outputs to `dist/server/src/` (not `dist/`) because the server tsconfig includes shared workspace paths. Already fixed in `ecosystem.config.js` — script is set to `dist/server/src/index.js`.
+
+### Server tsconfig build includes test files
+**GOTCHA:** Server tsconfig must exclude `*.test.ts` files from the build, or tsc will try to compile test files that import test-only dependencies (vitest, etc). Fix: add `"exclude": ["**/*.test.ts", "**/*.spec.ts"]` to server/tsconfig.json.
+
+### Client tsconfig / Vite type errors
+**GOTCHA:** Client tsconfig must exclude test files and needs a `vite-env.d.ts` file for `import.meta.env` type support. Without it, TypeScript does not know about Vite's environment variable types.
 
 ### `400 No required SSL certificate was sent`
-Enable in Cloudflare: SSL/TLS > Origin Server > **Authenticated Origin Pulls > ON**
+**GOTCHA:** Enable in Cloudflare: SSL/TLS > Origin Server > **Authenticated Origin Pulls > ON**
+
+When this is ON, curling `https://strickersacademy.in` from the VPS itself will also get 400. This is expected — Cloudflare requires the client certificate which only Cloudflare's edge servers have.
 
 Test API directly (bypasses Nginx SSL):
 ```bash
@@ -436,7 +477,7 @@ curl http://localhost:5000/api/auth/me
 ```
 
 ### DNS pointing to wrong IP
-Delete stale A records in Cloudflare. Check VPS IP:
+**GOTCHA:** Delete ALL stale A records in Cloudflare (e.g. old GoDaddy records). Keep only the VPS IP.
 ```bash
 curl -4 -s ifconfig.me
 ```
@@ -456,9 +497,24 @@ ss -tlnp | grep 5000
 - Verify public key is in `/home/deploy/.ssh/authorized_keys`
 - Test locally: `ssh -i github_deploy_key deploy@<VPS_IP> "echo ok"`
 - Check firewall: `sudo ufw status` (port 22 must be open)
+- **GOTCHA (Windows):** `ssh-keygen` on Windows does not accept `-N ""` for empty passphrase. Just press Enter when prompted.
+
+### Deploy times out in GitHub Actions
+**GOTCHA:** Add `command_timeout: 10m` to the appleboy/ssh-action step. npm ci + full build can easily exceed the default timeout.
 
 ### Deploy succeeds but site shows old version
 Clear browser cache or check in incognito. Verify PM2 restarted:
 ```bash
 pm2 logs strikers-api --lines 10
+```
+
+### Backup/restore workflows not showing in Actions tab
+**GOTCHA:** GitHub only discovers workflow files when they are pushed to the default branch. If you created the workflow on a feature branch, you need a `push:` trigger (not just `schedule`/`workflow_dispatch`) so GitHub sees the file when it lands on master.
+
+### pg_dump prompts for password during backup
+**GOTCHA:** Both root and deploy user need a `.pgpass` file for passwordless pg_dump:
+```bash
+# For each user (/root/.pgpass and /home/deploy/.pgpass):
+echo "127.0.0.1:5432:strikersacademy:strikers_user:YOUR_DB_PASSWORD" > ~/.pgpass
+chmod 600 ~/.pgpass
 ```
