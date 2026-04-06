@@ -7,6 +7,7 @@ import { Prisma, PrismaClient } from '@prisma/client';
 type TxClient = Prisma.TransactionClient;
 import { PaymentService } from './payment.service';
 import { SettingsService } from './settings.service';
+import { EmailService } from './email.service';
 
 /** Throw an HTTP-aware error */
 function httpError(message: string, statusCode: number): never {
@@ -170,7 +171,7 @@ export const BookingService = {
     // Deduplicate slot IDs
     const uniqueSlotIds = [...new Set(data.slotIds)];
 
-    return prisma.$transaction(async (tx: TxClient) => {
+    const batchResult = await prisma.$transaction(async (tx: TxClient) => {
       // Fetch all slots with facilities
       const slots = await tx.slot.findMany({
         where: { id: { in: uniqueSlotIds } },
@@ -261,6 +262,12 @@ export const BookingService = {
 
       return { bookings, batchId, totalPrice };
     });
+
+    // Send booking confirmation email (async, don't block response)
+    const batchBookingIds = batchResult.bookings.map((b: any) => b.id);
+    EmailService.sendBookingConfirmation(prisma, batchBookingIds).catch(() => {});
+
+    return batchResult;
   },
 
   /** List bookings for a user with pagination */
@@ -520,7 +527,7 @@ export const BookingService = {
     const chargePercent = await SettingsService.getCancellationChargePercent(prisma);
 
     // Cancel booking and process refund if applicable
-    return prisma.$transaction(async (tx: TxClient) => {
+    const cancelResult = await prisma.$transaction(async (tx: TxClient) => {
       const payment = booking!.payment;
       const needsRefund = payment && payment.status === 'SUCCESS' && payment.razorpayPaymentId;
       let refundIssued = false;
@@ -579,5 +586,10 @@ export const BookingService = {
 
       return updated;
     });
+
+    // Send cancellation/refund email (async)
+    EmailService.sendCancellationEmail(prisma, bookingId).catch(() => {});
+
+    return cancelResult;
   },
 };

@@ -5,6 +5,7 @@
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { PaymentService } from '../services/payment.service';
+import { EmailService } from '../services/email.service';
 import { success } from '../utils/response';
 
 // ── Validation schemas ────────────────────────────────────────
@@ -240,6 +241,10 @@ export class PaymentController {
       },
       'Payment verified — booking confirmed',
     );
+
+    // Send payment confirmation email with invoice (async)
+    const confirmedIds = bookings.map((b: any) => b.id);
+    EmailService.sendPaymentConfirmation(request.server.prisma, confirmedIds).catch(() => {});
   }
 
   /**

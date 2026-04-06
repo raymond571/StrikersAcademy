@@ -11,6 +11,7 @@ import { prismaPlugin } from './plugins/prisma';
 import { errorHandler } from './middleware/errorHandler';
 import { validateEnv } from './utils/validateEnv';
 import { startPendingBookingCleanup } from './jobs/expire-pending-bookings';
+import { startBookingReminders } from './jobs/booking-reminders';
 
 import authRoutes from './routes/auth';
 import bookingRoutes from './routes/booking';
@@ -107,6 +108,7 @@ export async function buildServer() {
   // ── Background jobs ────────────────────────────────────────
   app.addHook('onReady', () => {
     startPendingBookingCleanup(app.prisma);
+    startBookingReminders(app.prisma);
   });
 
   return app;

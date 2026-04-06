@@ -61,6 +61,11 @@ jobs:
             RAZORPAY_KEY_ID=${{ secrets.RAZORPAY_KEY_ID }}
             RAZORPAY_KEY_SECRET=${{ secrets.RAZORPAY_KEY_SECRET }}
             RAZORPAY_WEBHOOK_SECRET=${{ secrets.RAZORPAY_WEBHOOK_SECRET }}
+            SMTP_HOST=${{ secrets.SMTP_HOST || 'smtpout.secureserver.net' }}
+            SMTP_PORT=${{ secrets.SMTP_PORT || '465' }}
+            SMTP_USER=${{ secrets.SMTP_USER }}
+            SMTP_PASS=${{ secrets.SMTP_PASS }}
+            ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }}
             ENVEOF
 
             # 3. Write client .env (VITE_ vars are build-time only)
