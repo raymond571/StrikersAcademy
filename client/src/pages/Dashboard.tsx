@@ -411,8 +411,22 @@ function BookingCard({ group, cancelling, onCancel, onCancelBatch, onUpdate }: {
   const canAct = group.status === 'PENDING' || group.status === 'CONFIRMED' || group.status === 'PARTIAL';
   const activeBookings = group.bookings.filter(b => b.status === 'PENDING' || b.status === 'CONFIRMED');
 
-  const handleInvoice = (bookingId: string) => {
-    window.open(bookingApi.invoiceUrl(bookingId), '_blank');
+  const handleInvoice = async (bookingId: string) => {
+    try {
+      const res = await fetch(bookingApi.invoiceUrl(bookingId), { credentials: 'include' });
+      if (!res.ok) throw new Error('Failed to generate invoice');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `invoice-${bookingId.slice(-8)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Failed to download invoice');
+    }
   };
 
   if (!isBatch) {
