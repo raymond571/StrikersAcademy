@@ -6,6 +6,7 @@ vi.mock('./payment.service', () => ({
   PaymentService: {
     refund: vi.fn().mockResolvedValue({ id: 'rfnd_1' }),
     createOrder: vi.fn().mockResolvedValue({ id: 'order_extra_1' }),
+    fetchPayment: vi.fn().mockResolvedValue({ amount: 500, amount_refunded: 0 }),
   },
 }));
 import { PaymentService } from './payment.service';
@@ -389,6 +390,52 @@ describe('BookingService.cancelBooking', () => {
         data: { status: 'CANCELLED' },
       }),
     );
+  });
+
+  it('handles already fully refunded payment gracefully on cancel', async () => {
+    vi.mocked(PaymentService.refund).mockClear();
+    vi.mocked(PaymentService.fetchPayment).mockResolvedValueOnce({ amount: 500, amount_refunded: 500 });
+    const futureDate = new Date(Date.now() + 4 * 60 * 60 * 1000);
+    prisma.booking.findUnique.mockResolvedValue({
+      id: 'bk-1', userId: 'user-1', status: 'CONFIRMED',
+      slot: {
+        date: futureDate.toISOString().split('T')[0],
+        startTime: futureDate.toTimeString().slice(0, 5),
+      },
+      payment: { id: 'pay-1', status: 'SUCCESS', razorpayPaymentId: 'pay_rzp_1', amount: 500 },
+    });
+    prisma.booking.update.mockResolvedValue({
+      id: 'bk-1', status: 'REFUNDED', payment: { id: 'pay-1', status: 'REFUNDED' },
+    });
+
+    const result = await BookingService.cancelBooking(prisma, 'bk-1', 'user-1', 'CUSTOMER');
+
+    // Should NOT call refund since remaining is 0
+    expect(PaymentService.refund).not.toHaveBeenCalled();
+    // Should still mark as REFUNDED
+    expect(result.status).toBe('REFUNDED');
+  });
+
+  it('refunds only the remaining amount when partial refund was already issued', async () => {
+    vi.mocked(PaymentService.refund).mockClear();
+    vi.mocked(PaymentService.fetchPayment).mockResolvedValueOnce({ amount: 1500, amount_refunded: 1000 });
+    const futureDate = new Date(Date.now() + 4 * 60 * 60 * 1000);
+    prisma.booking.findUnique.mockResolvedValue({
+      id: 'bk-1', userId: 'user-1', status: 'CONFIRMED',
+      slot: {
+        date: futureDate.toISOString().split('T')[0],
+        startTime: futureDate.toTimeString().slice(0, 5),
+      },
+      payment: { id: 'pay-1', status: 'SUCCESS', razorpayPaymentId: 'pay_rzp_1', amount: 500 },
+    });
+    prisma.booking.update.mockResolvedValue({
+      id: 'bk-1', status: 'REFUNDED', payment: { id: 'pay-1', status: 'REFUNDED' },
+    });
+
+    await BookingService.cancelBooking(prisma, 'bk-1', 'user-1', 'CUSTOMER');
+
+    // Should refund only the remaining ₹500 (1500 captured - 1000 already refunded)
+    expect(PaymentService.refund).toHaveBeenCalledWith('pay_rzp_1', 500);
   });
 });
 

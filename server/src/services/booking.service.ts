@@ -389,15 +389,31 @@ export const BookingService = {
       // Check if refund is needed (paid online)
       const payment = booking!.payment;
       const needsRefund = payment && payment.status === 'SUCCESS' && payment.razorpayPaymentId;
+      let refundIssued = false;
 
       // Issue Razorpay refund before updating statuses
       if (needsRefund) {
         try {
-          await PaymentService.refund(payment.razorpayPaymentId!, payment.amount);
+          // Check how much has already been refunded on this Razorpay payment
+          // (partial refunds may have been issued during reschedule)
+          const rzpPayment = await PaymentService.fetchPayment(payment.razorpayPaymentId!);
+          const alreadyRefunded = rzpPayment.amount_refunded ?? 0;
+          const captured = rzpPayment.amount ?? 0;
+          const remaining = captured - alreadyRefunded;
+
+          if (remaining > 0) {
+            await PaymentService.refund(payment.razorpayPaymentId!, remaining);
+          }
+          refundIssued = true;
         } catch (err: unknown) {
           const msg = (err as { error?: { description?: string } })?.error?.description
             || (err as Error)?.message || 'Razorpay refund failed';
-          httpError(`Refund failed: ${msg}`, 502);
+          // If already fully refunded, treat as success
+          if (msg.toLowerCase().includes('fully refunded')) {
+            refundIssued = true;
+          } else {
+            httpError(`Refund failed: ${msg}`, 502);
+          }
         }
 
         await tx.payment.update({
@@ -409,7 +425,7 @@ export const BookingService = {
       // Set booking to REFUNDED if refund was processed, otherwise CANCELLED
       const updated = await tx.booking.update({
         where: { id: bookingId },
-        data: { status: needsRefund ? 'REFUNDED' : 'CANCELLED' },
+        data: { status: refundIssued ? 'REFUNDED' : 'CANCELLED' },
         include: {
           slot: { include: { facility: true } },
           payment: true,

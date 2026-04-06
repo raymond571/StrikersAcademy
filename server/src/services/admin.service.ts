@@ -230,11 +230,18 @@ export const AdminService = {
       if (status === 'REFUNDED' && payment && payment.status === 'SUCCESS') {
         if (payment.razorpayPaymentId) {
           try {
-            await PaymentService.refund(payment.razorpayPaymentId, payment.amount);
+            // Check how much has already been refunded (partial refunds from reschedule)
+            const rzpPayment = await PaymentService.fetchPayment(payment.razorpayPaymentId);
+            const remaining = (rzpPayment.amount ?? 0) - (rzpPayment.amount_refunded ?? 0);
+            if (remaining > 0) {
+              await PaymentService.refund(payment.razorpayPaymentId, remaining);
+            }
           } catch (err: unknown) {
             const msg = (err as { error?: { description?: string } })?.error?.description
               || (err as Error)?.message || 'Razorpay refund failed';
-            httpError(`Refund failed: ${msg}`, 502);
+            if (!msg.toLowerCase().includes('fully refunded')) {
+              httpError(`Refund failed: ${msg}`, 502);
+            }
           }
         }
         await tx.payment.update({
