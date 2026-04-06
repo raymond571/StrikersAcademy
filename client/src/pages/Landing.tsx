@@ -1,7 +1,10 @@
 import { Link } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
+import { useAuth } from '../hooks/useAuth';
 
 export default function LandingPage() {
+  const { user } = useAuth();
+
   return (
     <Layout>
       {/* Hero */}
@@ -14,12 +17,25 @@ export default function LandingPage() {
           Professional bowling machines, coached sessions, and more.
         </p>
         <div className="mt-8 flex gap-4 justify-center">
-          <Link to="/register" className="btn-primary text-base px-6 py-3">
-            Book a Slot
-          </Link>
-          <Link to="/login" className="btn-secondary text-base px-6 py-3">
-            Sign In
-          </Link>
+          {user ? (
+            <>
+              <Link to="/booking" className="btn-primary text-base px-6 py-3">
+                Book a Slot
+              </Link>
+              <Link to="/dashboard" className="btn-secondary text-base px-6 py-3">
+                My Bookings
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link to="/register" className="btn-primary text-base px-6 py-3">
+                Book a Slot
+              </Link>
+              <Link to="/login" className="btn-secondary text-base px-6 py-3">
+                Sign In
+              </Link>
+            </>
+          )}
         </div>
       </section>
 
