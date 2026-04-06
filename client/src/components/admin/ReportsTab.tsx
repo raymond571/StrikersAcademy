@@ -34,7 +34,7 @@ export function ReportsTab() {
     try {
       const [rev, bkRes] = await Promise.all([
         adminApi.revenueReport({ from, to }),
-        adminApi.listBookings({ limit: 50, page: 1 }),
+        adminApi.listBookings({ limit: 500, page: 1 }),
       ]);
       setRevenue(rev);
       setBookings(bkRes.data);

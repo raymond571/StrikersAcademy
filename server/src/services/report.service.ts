@@ -97,7 +97,7 @@ export const ReportService = {
   async bookingHistoryCSV(prisma: PrismaClient, from: string, to: string): Promise<{ csv: string; filename: string }> {
     const bookings = await prisma.booking.findMany({
       where: {
-        slot: { date: { gte: from, lte: to } },
+        createdAt: { gte: new Date(`${from}T00:00:00`), lte: new Date(`${to}T23:59:59`) },
       },
       include: {
         user: { select: { name: true, phone: true, email: true } },
@@ -136,7 +136,7 @@ export const ReportService = {
   async bookingHistoryPDF(prisma: PrismaClient, from: string, to: string): Promise<{ stream: PDFKit.PDFDocument; filename: string }> {
     const bookings = await prisma.booking.findMany({
       where: {
-        slot: { date: { gte: from, lte: to } },
+        createdAt: { gte: new Date(`${from}T00:00:00`), lte: new Date(`${to}T23:59:59`) },
       },
       include: {
         user: { select: { name: true, phone: true } },
