@@ -30,4 +30,5 @@ export interface VerifyPaymentPayload {
   razorpayPaymentId: string;
   razorpaySignature: string;
   bookingId: string;
+  batchId?: string;
 }

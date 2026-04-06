@@ -3,8 +3,11 @@ import { authenticate } from '../middleware/authenticate';
 import { BookingController } from '../controllers/booking.controller';
 
 const bookingRoutes: FastifyPluginAsync = async (fastify) => {
-  /** POST /api/bookings — create a booking (auth required) */
+  /** POST /api/bookings — create a single booking (auth required) */
   fastify.post('/', { preHandler: [authenticate] }, BookingController.create);
+
+  /** POST /api/bookings/batch — create multiple bookings at once (auth required) */
+  fastify.post('/batch', { preHandler: [authenticate] }, BookingController.createBatch);
 
   /** GET /api/bookings — list current user's bookings (auth required) */
   fastify.get('/', { preHandler: [authenticate] }, BookingController.listMine);

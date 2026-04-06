@@ -11,10 +11,12 @@ import { success } from '../utils/response';
 
 const initiateSchema = z.object({
   bookingId: z.string().min(1, 'bookingId is required'),
+  batchId: z.string().optional(),
 });
 
 const verifySchema = z.object({
   bookingId: z.string().min(1, 'bookingId is required'),
+  batchId: z.string().optional(),
   razorpayOrderId: z.string().min(1, 'razorpayOrderId is required'),
   razorpayPaymentId: z.string().min(1, 'razorpayPaymentId is required'),
   razorpaySignature: z.string().min(1, 'razorpaySignature is required'),
@@ -46,75 +48,87 @@ export class PaymentController {
       });
     }
 
-    const { bookingId } = parseResult.data;
+    const { bookingId, batchId } = parseResult.data;
     const prisma = request.server.prisma;
 
-    // Fetch booking with payment
-    const booking = await prisma.booking.findUnique({
-      where: { id: bookingId },
-      include: { payment: true, slot: { include: { facility: true } } },
-    });
-
-    if (!booking) httpError('Booking not found', 404);
-
-    // Only the booking owner can initiate payment
-    if (booking!.userId !== request.user.id) {
-      httpError('You do not have access to this booking', 403);
+    // If batch payment, get all bookings in the batch
+    let bookings: any[];
+    if (batchId) {
+      bookings = await prisma.booking.findMany({
+        where: { batchId, userId: request.user.id },
+        include: { payment: true, slot: { include: { facility: true } } },
+      });
+      if (!bookings.length) httpError('No bookings found for this batch', 404);
+    } else {
+      const booking = await prisma.booking.findUnique({
+        where: { id: bookingId },
+        include: { payment: true, slot: { include: { facility: true } } },
+      });
+      if (!booking) httpError('Booking not found', 404);
+      if (booking!.userId !== request.user.id) {
+        httpError('You do not have access to this booking', 403);
+      }
+      bookings = [booking];
     }
 
-    // Must be PENDING and ONLINE payment
-    if (booking!.status !== 'PENDING') {
-      httpError(`Cannot initiate payment for a ${booking!.status} booking`, 400);
-    }
-    if (booking!.paymentMethod !== 'ONLINE') {
-      httpError('This booking uses offline payment', 400);
+    // Validate all bookings
+    for (const b of bookings) {
+      if (b.status !== 'PENDING') httpError(`Booking already ${b.status}`, 400);
+      if (b.paymentMethod !== 'ONLINE') httpError('Booking uses offline payment', 400);
+      if (!b.payment) httpError('Payment record not found', 500);
     }
 
-    const payment = booking!.payment;
-    if (!payment) httpError('Payment record not found for this booking', 500);
+    const firstPayment = bookings[0].payment;
 
-    // If order already created and payment still pending, return existing order
-    if (payment!.razorpayOrderId && payment!.status === 'PENDING') {
+    // If order already created, return it
+    if (firstPayment.razorpayOrderId && firstPayment.status === 'PENDING') {
+      const totalAmount = bookings.reduce((sum: number, b: any) => sum + b.payment.amount, 0);
       return success(
         {
-          razorpayOrderId: payment!.razorpayOrderId,
-          amount: payment!.amount,
-          currency: payment!.currency,
+          razorpayOrderId: firstPayment.razorpayOrderId,
+          amount: totalAmount,
+          currency: firstPayment.currency,
           keyId: process.env.RAZORPAY_KEY_ID,
-          bookingId: booking!.id,
+          bookingId: bookings[0].id,
+          batchId: batchId || null,
         },
         'Razorpay order already exists',
       );
     }
 
-    // If payment already succeeded, no need to initiate again
-    if (payment!.status === 'SUCCESS') {
-      httpError('Payment has already been completed for this booking', 400);
+    if (firstPayment.status === 'SUCCESS') {
+      httpError('Payment has already been completed', 400);
     }
 
-    // Create Razorpay order
+    // Calculate total amount for all bookings
+    const totalAmount = bookings.reduce((sum: number, b: any) => sum + b.payment.amount, 0);
+
+    // Create single Razorpay order for total
     let order: { id: string };
     try {
-      order = await PaymentService.createOrder(payment!.amount, booking!.id);
+      order = await PaymentService.createOrder(totalAmount, batchId || bookingId);
     } catch (err: any) {
       const msg = err?.error?.description || err?.message || 'Razorpay order creation failed';
       httpError(`Payment gateway error: ${msg}`, 502);
     }
 
-    // Save order ID to payment record
-    await prisma.payment.update({
-      where: { id: payment!.id },
-      data: { razorpayOrderId: order!.id },
-    });
+    // Save order ID to ALL payment records in the batch
+    for (const b of bookings) {
+      await prisma.payment.update({
+        where: { id: b.payment.id },
+        data: { razorpayOrderId: order!.id },
+      });
+    }
 
     reply.status(201);
     return success(
       {
         razorpayOrderId: order.id,
-        amount: payment!.amount,
-        currency: payment!.currency,
+        amount: totalAmount,
+        currency: firstPayment.currency,
         keyId: process.env.RAZORPAY_KEY_ID,
-        bookingId: booking!.id,
+        bookingId: bookings[0].id,
+        batchId: batchId || null,
       },
       'Razorpay order created',
     );
@@ -136,33 +150,40 @@ export class PaymentController {
       });
     }
 
-    const { bookingId, razorpayOrderId, razorpayPaymentId, razorpaySignature } =
+    const { bookingId, batchId, razorpayOrderId, razorpayPaymentId, razorpaySignature } =
       parseResult.data;
     const prisma = request.server.prisma;
 
-    // Fetch booking and payment
-    const booking = await prisma.booking.findUnique({
-      where: { id: bookingId },
-      include: { payment: true },
-    });
-
-    if (!booking) httpError('Booking not found', 404);
-    if (booking!.userId !== request.user.id) {
-      httpError('You do not have access to this booking', 403);
+    // Fetch bookings — single or batch
+    let bookings: any[];
+    if (batchId) {
+      bookings = await prisma.booking.findMany({
+        where: { batchId, userId: request.user.id },
+        include: { payment: true },
+      });
+      if (!bookings.length) httpError('No bookings found for this batch', 404);
+    } else {
+      const booking = await prisma.booking.findUnique({
+        where: { id: bookingId },
+        include: { payment: true },
+      });
+      if (!booking) httpError('Booking not found', 404);
+      if (booking!.userId !== request.user.id) {
+        httpError('You do not have access to this booking', 403);
+      }
+      bookings = [booking];
     }
 
-    const payment = booking!.payment;
-    if (!payment) httpError('Payment record not found', 500);
+    const firstPayment = bookings[0].payment;
+    if (!firstPayment) httpError('Payment record not found', 500);
 
-    // Verify the order ID matches
-    if (payment!.razorpayOrderId !== razorpayOrderId) {
+    if (firstPayment.razorpayOrderId !== razorpayOrderId) {
       httpError('Order ID mismatch', 400);
     }
 
-    // Already processed
-    if (payment!.status === 'SUCCESS') {
+    if (firstPayment.status === 'SUCCESS') {
       return success(
-        { booking: { id: booking!.id, status: booking!.status }, paymentStatus: 'SUCCESS' },
+        { booking: { id: bookings[0].id, status: bookings[0].status }, paymentStatus: 'SUCCESS' },
         'Payment already verified',
       );
     }
@@ -175,33 +196,37 @@ export class PaymentController {
     });
 
     if (!isValid) {
-      // Mark payment as failed
-      await prisma.payment.update({
-        where: { id: payment!.id },
-        data: { status: 'FAILED' },
-      });
+      for (const b of bookings) {
+        if (b.payment) {
+          await prisma.payment.update({
+            where: { id: b.payment.id },
+            data: { status: 'FAILED' },
+          });
+        }
+      }
       httpError('Payment verification failed — invalid signature', 400);
     }
 
-    // Signature valid — confirm booking + payment in a transaction
+    // Signature valid — confirm ALL bookings + payments in the batch
     const result = await prisma.$transaction(async (tx: any) => {
-      const updatedPayment = await tx.payment.update({
-        where: { id: payment!.id },
-        data: {
-          razorpayPaymentId,
-          razorpaySignature,
-          status: 'SUCCESS',
-          paidAt: new Date(),
-        },
-      });
+      const now = new Date();
+      for (const b of bookings) {
+        await tx.payment.update({
+          where: { id: b.payment.id },
+          data: { razorpayPaymentId, razorpaySignature, status: 'SUCCESS', paidAt: now },
+        });
+        await tx.booking.update({
+          where: { id: b.id },
+          data: { status: 'CONFIRMED' },
+        });
+      }
 
-      const updatedBooking = await tx.booking.update({
-        where: { id: bookingId },
-        data: { status: 'CONFIRMED' },
+      const updatedBooking = await tx.booking.findUnique({
+        where: { id: bookings[0].id },
         include: { slot: { include: { facility: true } }, payment: true },
       });
 
-      return { booking: updatedBooking, payment: updatedPayment };
+      return { booking: updatedBooking, payment: updatedBooking.payment };
     });
 
     return success(

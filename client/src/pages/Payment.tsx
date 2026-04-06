@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/layout/Layout';
 import { paymentApi, bookingApi } from '../services/api';
 import type { Booking, InitiatePaymentResponse } from '@strikers/shared';
@@ -34,19 +34,20 @@ interface RazorpayInstance {
 
 export default function PaymentPage() {
   const { bookingId } = useParams<{ bookingId: string }>();
+  const [searchParams] = useSearchParams();
+  const batchId = searchParams.get('batchId') || undefined;
   const navigate = useNavigate();
 
   const [booking, setBooking] = useState<Booking | null>(null);
-  const [order, setOrder] = useState<InitiatePaymentResponse | null>(null);
+  const [order, setOrder] = useState<(InitiatePaymentResponse & { batchId?: string }) | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'processing' | 'success' | 'error'>('loading');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (!bookingId) return;
-    // Load booking details and create Razorpay order
     Promise.all([
       bookingApi.getById(bookingId),
-      paymentApi.initiate(bookingId),
+      paymentApi.initiate(bookingId, batchId),
     ])
       .then(([b, o]) => {
         setBooking(b);
@@ -57,7 +58,7 @@ export default function PaymentPage() {
         setErrorMsg(err instanceof Error ? err.message : 'Failed to initiate payment');
         setStatus('error');
       });
-  }, [bookingId]);
+  }, [bookingId, batchId]);
 
   const openRazorpay = () => {
     if (!order || !booking) return;
@@ -68,7 +69,7 @@ export default function PaymentPage() {
       amount: order.amount,
       currency: order.currency,
       name: 'StrikersAcademy',
-      description: `Booking ${booking.id}`,
+      description: batchId ? `Batch ${batchId}` : `Booking ${booking.id}`,
       order_id: order.razorpayOrderId,
       handler: async (response) => {
         try {
@@ -77,6 +78,7 @@ export default function PaymentPage() {
             razorpayPaymentId: response.razorpay_payment_id,
             razorpaySignature: response.razorpay_signature,
             bookingId: bookingId!,
+            batchId,
           });
           setStatus('success');
           setTimeout(() => navigate('/dashboard'), 2000);

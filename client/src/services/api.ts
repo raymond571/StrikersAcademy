@@ -127,6 +127,18 @@ export const bookingApi = {
     return res.data.data.booking;
   },
 
+  async createBatch(slotIds: string[], paymentMethod: 'ONLINE' | 'OFFLINE' = 'ONLINE'): Promise<{
+    bookings: Booking[];
+    batchId: string;
+    totalPrice: number;
+  }> {
+    const res = await api.post<{ data: { bookings: Booking[]; batchId: string; totalPrice: number } }>(
+      '/api/bookings/batch',
+      { slotIds, paymentMethod },
+    );
+    return res.data.data;
+  },
+
   async listMine(): Promise<Booking[]> {
     const res = await api.get<{ data: Booking[] }>('/api/bookings');
     return res.data.data;
@@ -153,10 +165,10 @@ export const bookingApi = {
 
 // ── Payments ──────────────────────────────────────────────────
 export const paymentApi = {
-  async initiate(bookingId: string): Promise<InitiatePaymentResponse> {
-    const res = await api.post<{ data: InitiatePaymentResponse }>(
+  async initiate(bookingId: string, batchId?: string): Promise<InitiatePaymentResponse & { batchId?: string }> {
+    const res = await api.post<{ data: InitiatePaymentResponse & { batchId?: string } }>(
       '/api/payments/initiate',
-      { bookingId },
+      { bookingId, ...(batchId ? { batchId } : {}) },
     );
     return res.data.data;
   },

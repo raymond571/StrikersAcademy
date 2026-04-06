@@ -24,6 +24,16 @@ export interface CreateBookingInput {
   notes?: string;
 }
 
+export interface BatchBookingInput {
+  userId: string;
+  slotIds: string[];
+  bookingFor: 'SELF' | 'CHILD' | 'TEAM';
+  playerName?: string;
+  teamName?: string;
+  paymentMethod: 'ONLINE' | 'OFFLINE';
+  notes?: string;
+}
+
 const ACTIVE_STATUSES = ['PENDING', 'CONFIRMED'];
 
 // Cancellation cutoff: 2 hours before slot start
@@ -139,6 +149,116 @@ export const BookingService = {
         ...booking,
         effectivePrice,
       };
+    });
+  },
+
+  /**
+   * Create multiple bookings in a single transaction (multi-slot / multi-facility).
+   * All bookings share the same batchId. One payment record per booking.
+   * For ONLINE: first booking gets the Razorpay payment, rest are linked via batchId.
+   */
+  async createBatchBooking(prisma: PrismaClient, data: BatchBookingInput) {
+    if (!data.slotIds.length) httpError('At least one slot is required', 400);
+    if (data.bookingFor === 'CHILD' && !data.playerName) {
+      httpError('playerName is required when booking for a child', 400);
+    }
+    if (data.bookingFor === 'TEAM' && !data.teamName) {
+      httpError('teamName is required when booking for a team', 400);
+    }
+
+    // Deduplicate slot IDs
+    const uniqueSlotIds = [...new Set(data.slotIds)];
+
+    return prisma.$transaction(async (tx: TxClient) => {
+      // Fetch all slots with facilities
+      const slots = await tx.slot.findMany({
+        where: { id: { in: uniqueSlotIds } },
+        include: { facility: true },
+      });
+
+      if (slots.length !== uniqueSlotIds.length) {
+        const foundIds = slots.map((s: any) => s.id);
+        const missing = uniqueSlotIds.filter((id) => !foundIds.includes(id));
+        httpError(`Slots not found: ${missing.join(', ')}`, 404);
+      }
+
+      // Validate all slots
+      let totalPrice = 0;
+      for (const slot of slots) {
+        if (!(slot as any).facility.isActive) {
+          httpError(`Facility "${(slot as any).facility.name}" is currently inactive`, 400);
+        }
+
+        // Check blocks
+        const blocks = await tx.availabilityBlock.findMany({
+          where: {
+            date: slot.date,
+            OR: [{ facilityId: slot.facilityId }, { facilityId: null }],
+          },
+        });
+        const isBlocked = blocks.some((block: any) => {
+          if (!block.startTime || !block.endTime) return true;
+          return slot.startTime >= block.startTime && slot.startTime < block.endTime;
+        });
+        if (isBlocked) {
+          httpError(`Slot ${slot.startTime}-${slot.endTime} on ${slot.date} is blocked`, 400);
+        }
+
+        // Check capacity
+        const activeCount = await tx.booking.count({
+          where: { slotId: slot.id, status: { in: ACTIVE_STATUSES } },
+        });
+        if (activeCount >= slot.capacity) {
+          httpError(`Slot ${slot.startTime}-${slot.endTime} at ${(slot as any).facility.name} is fully booked`, 409);
+        }
+
+        // Check duplicate
+        const existing = await tx.booking.findFirst({
+          where: { userId: data.userId, slotId: slot.id, status: { in: ACTIVE_STATUSES } },
+        });
+        if (existing) {
+          httpError(`You already have a booking for ${slot.startTime}-${slot.endTime} at ${(slot as any).facility.name}`, 409);
+        }
+
+        totalPrice += slot.priceOverride ?? (slot as any).facility.pricePerSlot;
+      }
+
+      // Generate a batch ID to group these bookings
+      const batchId = `batch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+      // Create all bookings
+      const bookings = [];
+      for (const slot of slots) {
+        const effectivePrice = slot.priceOverride ?? (slot as any).facility.pricePerSlot;
+        const booking = await tx.booking.create({
+          data: {
+            userId: data.userId,
+            slotId: slot.id,
+            batchId,
+            status: data.paymentMethod === 'OFFLINE' ? 'CONFIRMED' : 'PENDING',
+            bookingFor: data.bookingFor,
+            playerName: data.playerName?.trim(),
+            teamName: data.teamName?.trim(),
+            paymentMethod: data.paymentMethod,
+            notes: data.notes?.trim(),
+          },
+          include: { slot: { include: { facility: true } } },
+        });
+
+        // Each booking gets its own payment record
+        await tx.payment.create({
+          data: {
+            bookingId: booking.id,
+            amount: effectivePrice,
+            method: data.paymentMethod,
+            status: 'PENDING',
+          },
+        });
+
+        bookings.push({ ...booking, effectivePrice });
+      }
+
+      return { bookings, batchId, totalPrice };
     });
   },
 

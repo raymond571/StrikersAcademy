@@ -8,46 +8,98 @@ function formatPaise(paise: number) {
   return `₹${(paise / 100).toLocaleString('en-IN')}`;
 }
 
+interface CartItem {
+  slotId: string;
+  facilityId: string;
+  facilityName: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  price: number;
+}
+
 export default function BookingPage() {
   const navigate = useNavigate();
 
   const [facilities, setFacilities] = useState<Facility[]>([]);
-  const [selectedFacility, setSelectedFacility] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<string>('');
-  const [slots, setSlots] = useState<Slot[]>([]);
-  const [selectedSlot, setSelectedSlot] = useState<string>('');
+  const [facilitySlots, setFacilitySlots] = useState<Record<string, Slot[]>>({});
+  const [loadingSlots, setLoadingSlots] = useState<Record<string, boolean>>({});
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<'ONLINE' | 'OFFLINE'>('ONLINE');
-  const [isLoading, setIsLoading] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showSummary, setShowSummary] = useState(false);
+
+  const today = new Date().toISOString().split('T')[0];
 
   // Load facilities on mount
   useEffect(() => {
     facilityApi.list().then(setFacilities).catch(() => setError('Failed to load facilities'));
   }, []);
 
-  // Load slots when facility + date selected
+  // Load slots for ALL facilities when date changes
   useEffect(() => {
-    if (!selectedFacility || !selectedDate) {
-      setSlots([]);
-      return;
+    if (!selectedDate || !facilities.length) return;
+
+    setFacilitySlots({});
+    setCart([]);
+
+    for (const f of facilities) {
+      setLoadingSlots((prev) => ({ ...prev, [f.id]: true }));
+      facilityApi
+        .getSlots(f.id, selectedDate, false)
+        .then((slots) => {
+          setFacilitySlots((prev) => ({ ...prev, [f.id]: slots }));
+        })
+        .catch(() => {})
+        .finally(() => {
+          setLoadingSlots((prev) => ({ ...prev, [f.id]: false }));
+        });
     }
-    setIsLoading(true);
-    facilityApi
-      .getSlots(selectedFacility, selectedDate)
-      .then(setSlots)
-      .catch(() => setError('Failed to load slots'))
-      .finally(() => setIsLoading(false));
-  }, [selectedFacility, selectedDate]);
+  }, [selectedDate, facilities]);
+
+  const toggleSlot = (facility: Facility, slot: Slot) => {
+    const exists = cart.find((c) => c.slotId === slot.id);
+    if (exists) {
+      setCart(cart.filter((c) => c.slotId !== slot.id));
+    } else {
+      setCart([
+        ...cart,
+        {
+          slotId: slot.id,
+          facilityId: facility.id,
+          facilityName: facility.name,
+          date: slot.date,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          price: slot.effectivePrice ?? facility.pricePerSlot,
+        },
+      ]);
+    }
+  };
+
+  const isInCart = (slotId: string) => cart.some((c) => c.slotId === slotId);
+  const totalPrice = cart.reduce((sum, c) => sum + c.price, 0);
+
+  // Group cart items by facility for summary
+  const cartByFacility = cart.reduce<Record<string, CartItem[]>>((acc, item) => {
+    if (!acc[item.facilityName]) acc[item.facilityName] = [];
+    acc[item.facilityName].push(item);
+    return acc;
+  }, {});
 
   const handleBook = async () => {
-    if (!selectedSlot) return;
+    if (!cart.length) return;
     setIsBooking(true);
     setError(null);
     try {
-      const booking = await bookingApi.create(selectedSlot, paymentMethod);
+      const slotIds = cart.map((c) => c.slotId);
+      const result = await bookingApi.createBatch(slotIds, paymentMethod);
+
       if (paymentMethod === 'ONLINE') {
-        navigate(`/payment/${booking.id}`);
+        // Navigate to payment with batchId
+        navigate(`/payment/${result.bookings[0].id}?batchId=${result.batchId}`);
       } else {
         navigate('/dashboard');
       }
@@ -58,16 +110,21 @@ export default function BookingPage() {
     }
   };
 
-  // Min date = today
-  const today = new Date().toISOString().split('T')[0];
-
-  const selectedSlotData = slots.find((s) => s.id === selectedSlot);
-  const slotPrice = selectedSlotData?.effectivePrice;
-
   return (
     <Layout>
-      <div className="mx-auto max-w-2xl space-y-8">
-        <h1 className="text-2xl font-bold text-gray-900">Book a Slot</h1>
+      <div className="mx-auto max-w-4xl space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-gray-900">Book Slots</h1>
+          {cart.length > 0 && (
+            <button
+              onClick={() => setShowSummary(true)}
+              className="btn-primary relative"
+            >
+              View Cart ({cart.length})
+              <span className="ml-2 text-xs opacity-80">{formatPaise(totalPrice)}</span>
+            </button>
+          )}
+        </div>
 
         {error && (
           <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
@@ -75,135 +132,182 @@ export default function BookingPage() {
           </div>
         )}
 
-        {/* Step 1: Select Facility */}
+        {/* Step 1: Pick Date */}
         <div className="card">
-          <h2 className="text-base font-semibold text-gray-900 mb-4">
-            1. Select Facility
-          </h2>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {facilities.map((f) => (
-              <button
-                key={f.id}
-                onClick={() => { setSelectedFacility(f.id); setSelectedSlot(''); }}
-                className={`rounded-lg border p-4 text-left transition-colors ${
-                  selectedFacility === f.id
-                    ? 'border-brand-500 bg-brand-50'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                <div className="font-medium text-gray-900">{f.name}</div>
-                <div className="text-sm text-gray-500">{f.type}</div>
-                <div className="text-sm font-medium text-brand-600 mt-1">
-                  ₹{(f.pricePerSlot / 100).toFixed(0)}/slot
-                </div>
-              </button>
-            ))}
-          </div>
+          <h2 className="text-base font-semibold text-gray-900 mb-3">1. Pick a Date</h2>
+          <input
+            type="date"
+            className="input max-w-xs"
+            min={today}
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+          />
         </div>
 
-        {/* Step 2: Pick Date */}
-        {selectedFacility && (
-          <div className="card">
-            <h2 className="text-base font-semibold text-gray-900 mb-4">
-              2. Pick a Date
+        {/* Step 2: Facilities & Slots */}
+        {selectedDate && (
+          <div className="space-y-4">
+            <h2 className="text-base font-semibold text-gray-900">
+              2. Select Slots <span className="text-sm font-normal text-gray-500">(tap to add, tap again to remove)</span>
             </h2>
-            <input
-              type="date"
-              className="input max-w-xs"
-              min={today}
-              value={selectedDate}
-              onChange={(e) => { setSelectedDate(e.target.value); setSelectedSlot(''); }}
-            />
+
+            {facilities.map((f) => {
+              const slots = facilitySlots[f.id] || [];
+              const loading = loadingSlots[f.id];
+              const facilityCartCount = cart.filter((c) => c.facilityId === f.id).length;
+
+              return (
+                <div key={f.id} className="card">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <h3 className="font-semibold text-gray-900">{f.name}</h3>
+                      <p className="text-xs text-gray-500">{f.type} &middot; {formatPaise(f.pricePerSlot)}/slot</p>
+                    </div>
+                    {facilityCartCount > 0 && (
+                      <span className="rounded-full bg-brand-100 text-brand-700 px-2 py-0.5 text-xs font-medium">
+                        {facilityCartCount} selected
+                      </span>
+                    )}
+                  </div>
+
+                  {loading ? (
+                    <p className="text-sm text-gray-500">Loading...</p>
+                  ) : slots.length === 0 ? (
+                    <p className="text-sm text-gray-400">No slots for this date</p>
+                  ) : (
+                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
+                      {slots.map((slot) => {
+                        const inCart = isInCart(slot.id);
+                        return (
+                          <button
+                            key={slot.id}
+                            disabled={!slot.isAvailable && !inCart}
+                            onClick={() => toggleSlot(f, slot)}
+                            className={`rounded border px-1.5 py-1.5 text-xs transition-colors ${
+                              inCart
+                                ? 'border-brand-500 bg-brand-500 text-white font-medium'
+                                : !slot.isAvailable
+                                ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed'
+                                : 'border-gray-200 hover:border-brand-300 text-gray-700'
+                            }`}
+                          >
+                            {slot.startTime}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 
-        {/* Step 3: Pick Time Slot */}
-        {selectedDate && (
-          <div className="card">
-            <h2 className="text-base font-semibold text-gray-900 mb-4">
-              3. Choose a Time Slot
-            </h2>
-            {isLoading ? (
-              <p className="text-gray-500">Loading slots...</p>
-            ) : slots.length === 0 ? (
-              <p className="text-gray-500">No slots available for this date.</p>
-            ) : (
-              <div className="grid gap-2 sm:grid-cols-3">
-                {slots.map((slot) => (
-                  <button
-                    key={slot.id}
-                    disabled={!slot.isAvailable}
-                    onClick={() => setSelectedSlot(slot.id)}
-                    className={`rounded-lg border p-3 text-sm transition-colors ${
-                      !slot.isAvailable
-                        ? 'border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed'
-                        : selectedSlot === slot.id
-                        ? 'border-brand-500 bg-brand-50 text-brand-700 font-medium'
-                        : 'border-gray-200 hover:border-brand-300'
-                    }`}
-                  >
-                    {slot.startTime} – {slot.endTime}
-                  </button>
+        {/* Floating cart bar */}
+        {cart.length > 0 && !showSummary && (
+          <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 shadow-lg px-4 py-3 sm:hidden">
+            <button
+              onClick={() => setShowSummary(true)}
+              className="btn-primary w-full flex items-center justify-center gap-2"
+            >
+              <span>View Cart ({cart.length} slots)</span>
+              <span className="text-sm opacity-80">{formatPaise(totalPrice)}</span>
+            </button>
+          </div>
+        )}
+
+        {/* Summary Modal */}
+        {showSummary && (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50">
+            <div className="bg-white w-full sm:max-w-lg sm:rounded-xl rounded-t-xl max-h-[90vh] overflow-y-auto p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-gray-900">Booking Summary</h2>
+                <button onClick={() => setShowSummary(false)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+              </div>
+
+              <p className="text-sm text-gray-500">{selectedDate} &middot; {cart.length} slot{cart.length > 1 ? 's' : ''}</p>
+
+              {/* Cart items grouped by facility */}
+              <div className="space-y-3">
+                {Object.entries(cartByFacility).map(([facilityName, items]) => (
+                  <div key={facilityName} className="rounded-lg border border-gray-200 p-3">
+                    <p className="font-medium text-gray-900 text-sm">{facilityName}</p>
+                    <div className="mt-2 space-y-1">
+                      {items.sort((a, b) => a.startTime.localeCompare(b.startTime)).map((item) => (
+                        <div key={item.slotId} className="flex items-center justify-between text-sm">
+                          <span className="text-gray-600">{item.startTime} – {item.endTime}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-900">{formatPaise(item.price)}</span>
+                            <button
+                              onClick={() => setCart(cart.filter((c) => c.slotId !== item.slotId))}
+                              className="text-red-400 hover:text-red-600 text-xs"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
-            )}
-          </div>
-        )}
 
-        {/* Step 4: Payment Method */}
-        {selectedSlot && (
-          <div className="card">
-            <h2 className="text-base font-semibold text-gray-900 mb-4">
-              4. Payment Method
-            </h2>
-            <div className="flex gap-3">
+              {/* Total */}
+              <div className="flex items-center justify-between border-t pt-3">
+                <span className="font-semibold text-gray-900">Total</span>
+                <span className="text-xl font-bold text-brand-600">{formatPaise(totalPrice)}</span>
+              </div>
+
+              {/* Payment Method */}
+              <div>
+                <p className="text-sm font-medium text-gray-700 mb-2">Payment Method</p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setPaymentMethod('ONLINE')}
+                    className={`flex-1 rounded-lg border p-3 text-left transition-colors ${
+                      paymentMethod === 'ONLINE'
+                        ? 'border-brand-500 bg-brand-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="font-medium text-gray-900 text-sm">Pay Online</div>
+                    <div className="text-xs text-gray-500">UPI / Razorpay</div>
+                  </button>
+                  <button
+                    onClick={() => setPaymentMethod('OFFLINE')}
+                    className={`flex-1 rounded-lg border p-3 text-left transition-colors ${
+                      paymentMethod === 'OFFLINE'
+                        ? 'border-brand-500 bg-brand-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="font-medium text-gray-900 text-sm">Pay at Venue</div>
+                    <div className="text-xs text-gray-500">Cash / UPI at counter</div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Confirm */}
               <button
-                onClick={() => setPaymentMethod('ONLINE')}
-                className={`flex-1 rounded-lg border p-4 text-left transition-colors ${
-                  paymentMethod === 'ONLINE'
-                    ? 'border-brand-500 bg-brand-50'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
+                onClick={handleBook}
+                disabled={isBooking || cart.length === 0}
+                className="btn-primary w-full text-base py-3 disabled:opacity-50"
               >
-                <div className="font-medium text-gray-900">Pay Online</div>
-                <div className="text-xs text-gray-500 mt-1">UPI / Razorpay</div>
+                {isBooking
+                  ? 'Creating bookings...'
+                  : paymentMethod === 'ONLINE'
+                  ? `Confirm & Pay ${formatPaise(totalPrice)}`
+                  : `Confirm ${cart.length} Slot${cart.length > 1 ? 's' : ''} (Pay at Venue)`}
               </button>
+
               <button
-                onClick={() => setPaymentMethod('OFFLINE')}
-                className={`flex-1 rounded-lg border p-4 text-left transition-colors ${
-                  paymentMethod === 'OFFLINE'
-                    ? 'border-brand-500 bg-brand-50'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
+                onClick={() => setShowSummary(false)}
+                className="btn-secondary w-full"
               >
-                <div className="font-medium text-gray-900">Pay at Venue</div>
-                <div className="text-xs text-gray-500 mt-1">Cash / UPI at counter</div>
+                Continue Shopping
               </button>
             </div>
-
-            {/* Price summary */}
-            {slotPrice != null && (
-              <div className="mt-4 rounded-lg bg-gray-50 p-3 flex items-center justify-between">
-                <span className="text-sm text-gray-600">Slot Price</span>
-                <span className="text-lg font-bold text-gray-900">{formatPaise(slotPrice)}</span>
-              </div>
-            )}
           </div>
-        )}
-
-        {/* Confirm */}
-        {selectedSlot && (
-          <button
-            onClick={handleBook}
-            disabled={isBooking}
-            className="btn-primary w-full text-base py-3"
-          >
-            {isBooking
-              ? 'Creating booking...'
-              : paymentMethod === 'ONLINE'
-              ? 'Confirm & Proceed to Payment'
-              : 'Confirm Booking (Pay at Venue)'}
-          </button>
         )}
       </div>
     </Layout>

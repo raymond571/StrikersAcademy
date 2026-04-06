@@ -6,6 +6,7 @@ export interface Booking {
   id: string;
   userId: string;
   slotId: string;
+  batchId: string | null;
   status: BookingStatus;
   bookingFor: BookingFor;
   playerName: string | null;

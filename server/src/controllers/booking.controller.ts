@@ -18,6 +18,15 @@ const createSchema = z.object({
   notes: z.string().max(500).optional(),
 });
 
+const batchCreateSchema = z.object({
+  slotIds: z.array(z.string().min(1)).min(1, 'At least one slot is required').max(20),
+  bookingFor: z.enum(['SELF', 'CHILD', 'TEAM']).default('SELF'),
+  playerName: z.string().max(100).optional(),
+  teamName: z.string().max(100).optional(),
+  paymentMethod: z.enum(['ONLINE', 'OFFLINE']).default('ONLINE'),
+  notes: z.string().max(500).optional(),
+});
+
 const updateSlotSchema = z.object({
   slotId: z.string().min(1, 'slotId is required'),
   extraPaymentMethod: z.enum(['ONLINE', 'OFFLINE']).optional(),
@@ -74,6 +83,30 @@ export class BookingController {
       },
       'Booking created',
     );
+  }
+
+  /**
+   * POST /api/bookings/batch
+   * Body: { slotIds: string[], bookingFor?, playerName?, teamName?, paymentMethod?, notes? }
+   */
+  static async createBatch(request: FastifyRequest, reply: FastifyReply) {
+    const parseResult = batchCreateSchema.safeParse(request.body);
+    if (!parseResult.success) {
+      return reply.status(400).send({
+        success: false,
+        error: 'Validation failed',
+        statusCode: 400,
+        details: parseResult.error.flatten().fieldErrors,
+      });
+    }
+
+    const result = await BookingService.createBatchBooking(request.server.prisma, {
+      userId: request.user.id,
+      ...parseResult.data,
+    });
+
+    reply.status(201);
+    return success(result, 'Bookings created');
   }
 
   /**

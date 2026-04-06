@@ -261,12 +261,11 @@ describe('BookingService.cancelBooking', () => {
   });
 
   it('cancels a booking within the cancellation window', async () => {
-    const futureDate = new Date(Date.now() + 4 * 60 * 60 * 1000); // 4 hours from now
     prisma.booking.findUnique.mockResolvedValue({
       id: 'bk-1', userId: 'user-1', status: 'CONFIRMED',
       slot: {
-        date: futureDate.toISOString().split('T')[0],
-        startTime: futureDate.toTimeString().slice(0, 5),
+        date: '2099-12-31',
+        startTime: '18:00',
       },
       payment: null,
     });
@@ -304,13 +303,16 @@ describe('BookingService.cancelBooking', () => {
   });
 
   it('throws 400 when cancellation window has passed for CUSTOMER', async () => {
-    // Slot starts in 30 minutes (less than 2 hours)
-    const soonDate = new Date(Date.now() + 30 * 60 * 1000);
+    // Slot starts very soon (use today's date with a time 30 mins from now)
+    const now = new Date();
+    const soon = new Date(now.getTime() + 30 * 60 * 1000);
+    const soonDate = `${soon.getFullYear()}-${String(soon.getMonth() + 1).padStart(2, '0')}-${String(soon.getDate()).padStart(2, '0')}`;
+    const soonTime = `${String(soon.getHours()).padStart(2, '0')}:${String(soon.getMinutes()).padStart(2, '0')}`;
     prisma.booking.findUnique.mockResolvedValue({
       id: 'bk-1', userId: 'user-1', status: 'CONFIRMED',
       slot: {
-        date: soonDate.toISOString().split('T')[0],
-        startTime: soonDate.toTimeString().slice(0, 5),
+        date: soonDate,
+        startTime: soonTime,
       },
     });
 
@@ -320,12 +322,15 @@ describe('BookingService.cancelBooking', () => {
   });
 
   it('allows ADMIN to cancel even within cutoff window', async () => {
-    const soonDate = new Date(Date.now() + 30 * 60 * 1000);
+    const now = new Date();
+    const soon2 = new Date(now.getTime() + 30 * 60 * 1000);
+    const soonDate2 = `${soon2.getFullYear()}-${String(soon2.getMonth() + 1).padStart(2, '0')}-${String(soon2.getDate()).padStart(2, '0')}`;
+    const soonTime2 = `${String(soon2.getHours()).padStart(2, '0')}:${String(soon2.getMinutes()).padStart(2, '0')}`;
     prisma.booking.findUnique.mockResolvedValue({
       id: 'bk-1', userId: 'user-1', status: 'CONFIRMED',
       slot: {
-        date: soonDate.toISOString().split('T')[0],
-        startTime: soonDate.toTimeString().slice(0, 5),
+        date: soonDate2,
+        startTime: soonTime2,
       },
       payment: null,
     });
@@ -336,12 +341,11 @@ describe('BookingService.cancelBooking', () => {
   });
 
   it('sets booking to REFUNDED and issues Razorpay refund for paid online booking', async () => {
-    const futureDate = new Date(Date.now() + 4 * 60 * 60 * 1000);
     prisma.booking.findUnique.mockResolvedValue({
       id: 'bk-1', userId: 'user-1', status: 'CONFIRMED',
       slot: {
-        date: futureDate.toISOString().split('T')[0],
-        startTime: futureDate.toTimeString().slice(0, 5),
+        date: '2099-12-31',
+        startTime: '18:00',
       },
       payment: { id: 'pay-1', status: 'SUCCESS', razorpayPaymentId: 'pay_rzp_1', amount: 500 },
     });
@@ -371,12 +375,11 @@ describe('BookingService.cancelBooking', () => {
 
   it('sets booking to CANCELLED (not REFUNDED) for offline/unpaid booking', async () => {
     vi.mocked(PaymentService.refund).mockClear();
-    const futureDate = new Date(Date.now() + 4 * 60 * 60 * 1000);
     prisma.booking.findUnique.mockResolvedValue({
       id: 'bk-1', userId: 'user-1', status: 'CONFIRMED',
       slot: {
-        date: futureDate.toISOString().split('T')[0],
-        startTime: futureDate.toTimeString().slice(0, 5),
+        date: '2099-12-31',
+        startTime: '18:00',
       },
       payment: { id: 'pay-1', status: 'PENDING', razorpayPaymentId: null, amount: 500 },
     });
@@ -395,12 +398,11 @@ describe('BookingService.cancelBooking', () => {
   it('handles already fully refunded payment gracefully on cancel', async () => {
     vi.mocked(PaymentService.refund).mockClear();
     vi.mocked(PaymentService.fetchPayment).mockResolvedValueOnce({ amount: 500, amount_refunded: 500 });
-    const futureDate = new Date(Date.now() + 4 * 60 * 60 * 1000);
     prisma.booking.findUnique.mockResolvedValue({
       id: 'bk-1', userId: 'user-1', status: 'CONFIRMED',
       slot: {
-        date: futureDate.toISOString().split('T')[0],
-        startTime: futureDate.toTimeString().slice(0, 5),
+        date: '2099-12-31',
+        startTime: '18:00',
       },
       payment: { id: 'pay-1', status: 'SUCCESS', razorpayPaymentId: 'pay_rzp_1', amount: 500 },
     });
@@ -419,12 +421,11 @@ describe('BookingService.cancelBooking', () => {
   it('refunds only the remaining amount when partial refund was already issued', async () => {
     vi.mocked(PaymentService.refund).mockClear();
     vi.mocked(PaymentService.fetchPayment).mockResolvedValueOnce({ amount: 1500, amount_refunded: 1000 });
-    const futureDate = new Date(Date.now() + 4 * 60 * 60 * 1000);
     prisma.booking.findUnique.mockResolvedValue({
       id: 'bk-1', userId: 'user-1', status: 'CONFIRMED',
       slot: {
-        date: futureDate.toISOString().split('T')[0],
-        startTime: futureDate.toTimeString().slice(0, 5),
+        date: '2099-12-31',
+        startTime: '18:00',
       },
       payment: { id: 'pay-1', status: 'SUCCESS', razorpayPaymentId: 'pay_rzp_1', amount: 500 },
     });
