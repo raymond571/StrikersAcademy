@@ -50,7 +50,7 @@ echo "→ Cleaning node_modules..."
 rm -rf "$APP_DIR/node_modules" "$APP_DIR/server/node_modules" "$APP_DIR/client/node_modules" "$APP_DIR/shared/node_modules"
 
 echo "→ Installing dependencies..."
-npm ci --omit=dev
+npm ci
 
 # ── 4. Generate Prisma client ────────────────────────────────
 echo ""
