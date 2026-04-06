@@ -27,7 +27,8 @@ export function DashboardTab({ onNavigate }: Props) {
     { label: "Today's Bookings", value: stats.todayBookings, color: 'text-blue-600', onClick: () => onNavigate('bookings', '') },
     { label: 'Active Facilities', value: stats.activeFacilities, color: 'text-purple-600', onClick: undefined },
     { label: 'Customers', value: stats.totalUsers, color: 'text-indigo-600', onClick: () => onNavigate('users') },
-    { label: 'Total Revenue', value: formatPaise(stats.totalRevenue), color: 'text-emerald-600', onClick: () => onNavigate('reports') },
+    { label: 'Net Revenue', value: formatPaise(stats.netRevenue), color: 'text-emerald-600', onClick: () => onNavigate('reports') },
+    { label: 'Refunds', value: formatPaise(stats.totalRefunds), color: 'text-orange-500', onClick: () => onNavigate('reports') },
   ];
 
   return (

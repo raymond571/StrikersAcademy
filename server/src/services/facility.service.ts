@@ -76,6 +76,11 @@ export const FacilityService = {
       },
     });
 
+    // Current time in IST for filtering past slots
+    const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const todayIST = `${nowIST.getFullYear()}-${String(nowIST.getMonth() + 1).padStart(2, '0')}-${String(nowIST.getDate()).padStart(2, '0')}`;
+    const currentTimeHHMM = `${String(nowIST.getHours()).padStart(2, '0')}:${String(nowIST.getMinutes()).padStart(2, '0')}`;
+
     // Enrich slots with availability info
     const enriched = slots.map((slot) => {
       const bookedCount = slot._count.bookings;
@@ -86,7 +91,10 @@ export const FacilityService = {
         return slot.startTime >= block.startTime && slot.startTime < block.endTime;
       });
 
-      const isAvailable = !isBlocked && bookedCount < slot.capacity;
+      // Slot is in the past if it's today and start time has passed
+      const isPast = date === todayIST && slot.startTime <= currentTimeHHMM;
+
+      const isAvailable = !isBlocked && !isPast && bookedCount < slot.capacity;
 
       return {
         id: slot.id,

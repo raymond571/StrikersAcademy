@@ -163,6 +163,44 @@ describe('FacilityService.getSlots', () => {
       FacilityService.getSlots(prisma, 'nonexistent', '2026-04-10', false),
     ).rejects.toThrow('Facility not found');
   });
+
+  it('marks past slots as unavailable for today (IST)', async () => {
+    // Get current IST time and construct a slot that is 2 hours in the past
+    const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const todayIST = `${nowIST.getFullYear()}-${String(nowIST.getMonth() + 1).padStart(2, '0')}-${String(nowIST.getDate()).padStart(2, '0')}`;
+    const pastHour = String(Math.max(0, nowIST.getHours() - 2)).padStart(2, '0');
+    const futureHour = String(Math.min(23, nowIST.getHours() + 2)).padStart(2, '0');
+
+    prisma.slot.findMany.mockResolvedValue([
+      {
+        id: 's-past', facilityId: 'f1', date: todayIST, startTime: `${pastHour}:00`, endTime: `${pastHour}:59`,
+        capacity: 4, priceOverride: null, _count: { bookings: 0 },
+      },
+      {
+        id: 's-future', facilityId: 'f1', date: todayIST, startTime: `${futureHour}:00`, endTime: `${futureHour}:59`,
+        capacity: 4, priceOverride: null, _count: { bookings: 0 },
+      },
+    ]);
+
+    const result = await FacilityService.getSlots(prisma, 'f1', todayIST, false);
+    const pastSlot = result.find((s: any) => s.id === 's-past');
+    const futureSlot = result.find((s: any) => s.id === 's-future');
+
+    expect(pastSlot?.isAvailable).toBe(false);
+    expect(futureSlot?.isAvailable).toBe(true);
+  });
+
+  it('does not filter past slots for future dates', async () => {
+    prisma.slot.findMany.mockResolvedValue([
+      {
+        id: 's1', facilityId: 'f1', date: '2026-12-25', startTime: '06:00', endTime: '07:00',
+        capacity: 4, priceOverride: null, _count: { bookings: 0 },
+      },
+    ]);
+
+    const result = await FacilityService.getSlots(prisma, 'f1', '2026-12-25', false);
+    expect(result[0].isAvailable).toBe(true);
+  });
 });
 
 describe('FacilityService.create', () => {

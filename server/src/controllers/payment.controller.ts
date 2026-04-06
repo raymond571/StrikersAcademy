@@ -218,6 +218,74 @@ export class PaymentController {
   }
 
   /**
+   * POST /api/payments/verify-extra
+   * Body: { bookingId, razorpayOrderId, razorpayPaymentId, razorpaySignature }
+   * Verifies an extra payment made after a booking reschedule (price increase).
+   */
+  static async verifyExtra(request: FastifyRequest, reply: FastifyReply) {
+    const parseResult = verifySchema.safeParse(request.body);
+    if (!parseResult.success) {
+      return reply.status(400).send({
+        success: false,
+        error: 'Validation failed',
+        statusCode: 400,
+        details: parseResult.error.flatten().fieldErrors,
+      });
+    }
+
+    const { bookingId, razorpayOrderId, razorpayPaymentId, razorpaySignature } =
+      parseResult.data;
+    const prisma = request.server.prisma;
+
+    const booking = await prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: { payment: true },
+    });
+
+    if (!booking) httpError('Booking not found', 404);
+    if (booking!.userId !== request.user.id) {
+      httpError('You do not have access to this booking', 403);
+    }
+
+    const payment = booking!.payment;
+    if (!payment) httpError('Payment record not found', 500);
+
+    if (payment!.razorpayOrderId !== razorpayOrderId) {
+      httpError('Order ID mismatch', 400);
+    }
+
+    // Verify HMAC signature
+    const isValid = PaymentService.verifySignature({
+      razorpayOrderId,
+      razorpayPaymentId,
+      razorpaySignature,
+    });
+
+    if (!isValid) {
+      httpError('Payment verification failed — invalid signature', 400);
+    }
+
+    // Update payment with new razorpayPaymentId (the extra payment)
+    // Keep status as SUCCESS, update paidAt to latest
+    await prisma.payment.update({
+      where: { id: payment!.id },
+      data: {
+        razorpayPaymentId,
+        razorpaySignature,
+        paidAt: new Date(),
+      },
+    });
+
+    return success(
+      {
+        booking: { id: booking!.id, status: booking!.status },
+        paymentStatus: 'SUCCESS',
+      },
+      'Extra payment verified',
+    );
+  }
+
+  /**
    * POST /api/payments/webhook
    * Public endpoint — Razorpay sends payment events here.
    * Verifies X-Razorpay-Signature header, handles payment.captured and payment.failed.

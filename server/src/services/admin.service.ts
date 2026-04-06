@@ -78,7 +78,7 @@ export interface UpdateCouponInput {
 export const AdminService = {
   /** Dashboard summary stats */
   async dashboard(prisma: PrismaClient) {
-    const [totalBookings, confirmedBookings, activeFacilities, totalUsers, revenueResult] =
+    const [totalBookings, confirmedBookings, activeFacilities, totalUsers, revenueResult, refundResult] =
       await Promise.all([
         prisma.booking.count(),
         prisma.booking.count({ where: { status: 'CONFIRMED' } }),
@@ -87,6 +87,11 @@ export const AdminService = {
         prisma.payment.aggregate({
           _sum: { amount: true },
           where: { status: 'SUCCESS' },
+        }),
+        prisma.payment.aggregate({
+          _sum: { amount: true },
+          _count: true,
+          where: { status: 'REFUNDED' },
         }),
       ]);
 
@@ -99,13 +104,18 @@ export const AdminService = {
       },
     });
 
+    const gross = revenueResult._sum.amount ?? 0;
+    const refunds = refundResult._sum.amount ?? 0;
+
     return {
       totalBookings,
       confirmedBookings,
       todayBookings,
       activeFacilities,
       totalUsers,
-      totalRevenue: revenueResult._sum.amount ?? 0,
+      totalRevenue: gross,
+      totalRefunds: refunds,
+      netRevenue: gross - refunds,
     };
   },
 
@@ -214,6 +224,42 @@ export const AdminService = {
     if (!booking) httpError('Booking not found', 404);
 
     return prisma.$transaction(async (tx) => {
+      const payment = booking!.payment;
+
+      // Handle payment status changes — issue Razorpay refund if applicable
+      if (status === 'REFUNDED' && payment && payment.status === 'SUCCESS') {
+        if (payment.razorpayPaymentId) {
+          try {
+            await PaymentService.refund(payment.razorpayPaymentId, payment.amount);
+          } catch (err: unknown) {
+            const msg = (err as { error?: { description?: string } })?.error?.description
+              || (err as Error)?.message || 'Razorpay refund failed';
+            httpError(`Refund failed: ${msg}`, 502);
+          }
+        }
+        await tx.payment.update({
+          where: { id: payment.id },
+          data: { status: 'REFUNDED', refundedAt: new Date() },
+        });
+      }
+      if (status === 'CANCELLED' && payment) {
+        if (payment.status === 'PENDING') {
+          await tx.payment.update({
+            where: { id: payment.id },
+            data: { status: 'FAILED' },
+          });
+        }
+        // For SUCCESS payments cancelled without refund, mark payment as FAILED
+        // so revenue no longer counts it
+        if (payment.status === 'SUCCESS' && !payment.razorpayPaymentId) {
+          await tx.payment.update({
+            where: { id: payment.id },
+            data: { status: 'FAILED' },
+          });
+        }
+      }
+
+      // Update booking status after payment changes so return value is fresh
       const updated = await tx.booking.update({
         where: { id: bookingId },
         data: {
@@ -226,29 +272,6 @@ export const AdminService = {
           payment: true,
         },
       });
-
-      // Handle payment status changes — issue Razorpay refund if applicable
-      if (status === 'REFUNDED' && updated.payment && updated.payment.status === 'SUCCESS') {
-        if (updated.payment.razorpayPaymentId) {
-          try {
-            await PaymentService.refund(updated.payment.razorpayPaymentId, updated.payment.amount);
-          } catch (err: unknown) {
-            const msg = (err as { error?: { description?: string } })?.error?.description
-              || (err as Error)?.message || 'Razorpay refund failed';
-            httpError(`Refund failed: ${msg}`, 502);
-          }
-        }
-        await tx.payment.update({
-          where: { id: updated.payment.id },
-          data: { status: 'REFUNDED', refundedAt: new Date() },
-        });
-      }
-      if (status === 'CANCELLED' && updated.payment && updated.payment.status === 'PENDING') {
-        await tx.payment.update({
-          where: { id: updated.payment.id },
-          data: { status: 'FAILED' },
-        });
-      }
 
       return updated;
     });

@@ -1,6 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { BookingService } from './booking.service';
 
+// Mock PaymentService
+vi.mock('./payment.service', () => ({
+  PaymentService: {
+    refund: vi.fn().mockResolvedValue({ id: 'rfnd_1' }),
+    createOrder: vi.fn().mockResolvedValue({ id: 'order_extra_1' }),
+  },
+}));
+import { PaymentService } from './payment.service';
+
 function createMockTx() {
   return {
     slot: { findUnique: vi.fn() },
@@ -325,7 +334,7 @@ describe('BookingService.cancelBooking', () => {
     expect(result.status).toBe('CANCELLED');
   });
 
-  it('marks online payment for refund when cancelling paid booking', async () => {
+  it('sets booking to REFUNDED and issues Razorpay refund for paid online booking', async () => {
     const futureDate = new Date(Date.now() + 4 * 60 * 60 * 1000);
     prisma.booking.findUnique.mockResolvedValue({
       id: 'bk-1', userId: 'user-1', status: 'CONFIRMED',
@@ -333,20 +342,191 @@ describe('BookingService.cancelBooking', () => {
         date: futureDate.toISOString().split('T')[0],
         startTime: futureDate.toTimeString().slice(0, 5),
       },
-      payment: { id: 'pay-1', status: 'SUCCESS' },
+      payment: { id: 'pay-1', status: 'SUCCESS', razorpayPaymentId: 'pay_rzp_1', amount: 500 },
     });
     prisma.booking.update.mockResolvedValue({
-      id: 'bk-1', status: 'CANCELLED',
-      payment: { id: 'pay-1', status: 'SUCCESS' },
+      id: 'bk-1', status: 'REFUNDED',
+      payment: { id: 'pay-1', status: 'REFUNDED' },
     });
 
-    await BookingService.cancelBooking(prisma, 'bk-1', 'user-1', 'CUSTOMER');
+    const result = await BookingService.cancelBooking(prisma, 'bk-1', 'user-1', 'CUSTOMER');
 
+    // Should call Razorpay refund
+    expect(PaymentService.refund).toHaveBeenCalledWith('pay_rzp_1', 500);
+    // Should update payment to REFUNDED
     expect(prisma.payment.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'pay-1' },
         data: expect.objectContaining({ status: 'REFUNDED' }),
       }),
     );
+    // Should set booking status to REFUNDED (not CANCELLED)
+    expect(prisma.booking.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { status: 'REFUNDED' },
+      }),
+    );
+  });
+
+  it('sets booking to CANCELLED (not REFUNDED) for offline/unpaid booking', async () => {
+    vi.mocked(PaymentService.refund).mockClear();
+    const futureDate = new Date(Date.now() + 4 * 60 * 60 * 1000);
+    prisma.booking.findUnique.mockResolvedValue({
+      id: 'bk-1', userId: 'user-1', status: 'CONFIRMED',
+      slot: {
+        date: futureDate.toISOString().split('T')[0],
+        startTime: futureDate.toTimeString().slice(0, 5),
+      },
+      payment: { id: 'pay-1', status: 'PENDING', razorpayPaymentId: null, amount: 500 },
+    });
+    prisma.booking.update.mockResolvedValue({ id: 'bk-1', status: 'CANCELLED', payment: null });
+
+    await BookingService.cancelBooking(prisma, 'bk-1', 'user-1', 'CUSTOMER');
+
+    expect(PaymentService.refund).not.toHaveBeenCalled();
+    expect(prisma.booking.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { status: 'CANCELLED' },
+      }),
+    );
+  });
+});
+
+describe('BookingService.updateSlot', () => {
+  let prisma: any;
+
+  const futureSlot = {
+    id: 'slot-old', facilityId: 'fac-1', date: '2026-12-01', startTime: '10:00', endTime: '11:00',
+    capacity: 4, priceOverride: null,
+    facility: { id: 'fac-1', isActive: true, pricePerSlot: 500 },
+  };
+
+  const newSlot = {
+    id: 'slot-new', facilityId: 'fac-2', date: '2026-12-01', startTime: '14:00', endTime: '15:00',
+    capacity: 4, priceOverride: null,
+    facility: { id: 'fac-2', isActive: true, pricePerSlot: 1500 },
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prisma = {
+      booking: { findUnique: vi.fn(), update: vi.fn(), count: vi.fn(), findFirst: vi.fn() },
+      slot: { findUnique: vi.fn() },
+      payment: { update: vi.fn() },
+      availabilityBlock: { findMany: vi.fn() },
+      $transaction: vi.fn((cb: any) => cb(prisma)),
+    };
+
+    // Default: booking exists, user owns it, CONFIRMED
+    prisma.booking.findUnique.mockResolvedValue({
+      id: 'bk-1', userId: 'user-1', slotId: 'slot-old', status: 'CONFIRMED',
+      slot: futureSlot,
+      payment: { id: 'pay-1', status: 'PENDING', amount: 500, razorpayPaymentId: null },
+    });
+
+    prisma.slot.findUnique.mockResolvedValue(newSlot);
+    prisma.availabilityBlock.findMany.mockResolvedValue([]);
+    prisma.booking.count.mockResolvedValue(0);
+    prisma.booking.findFirst.mockResolvedValue(null);
+    prisma.booking.update.mockResolvedValue({ id: 'bk-1', slotId: 'slot-new' });
+  });
+
+  it('updates booking to new slot', async () => {
+    prisma.booking.findUnique
+      .mockResolvedValueOnce({
+        id: 'bk-1', userId: 'user-1', slotId: 'slot-old', status: 'CONFIRMED',
+        slot: futureSlot,
+        payment: { id: 'pay-1', status: 'PENDING', amount: 500, razorpayPaymentId: null },
+      })
+      .mockResolvedValueOnce({
+        id: 'bk-1', slotId: 'slot-new', slot: newSlot, payment: { id: 'pay-1', amount: 1500 },
+      });
+
+    const result = await BookingService.updateSlot(prisma, 'bk-1', 'slot-new', 'user-1', 'CUSTOMER', 'OFFLINE');
+    expect(result.newPrice).toBe(1500);
+    expect(result.oldPrice).toBe(500);
+    expect(result.priceDiff).toBe(1000);
+  });
+
+  it('throws 404 when booking not found', async () => {
+    prisma.booking.findUnique.mockResolvedValue(null);
+    await expect(
+      BookingService.updateSlot(prisma, 'x', 'slot-new', 'user-1', 'CUSTOMER'),
+    ).rejects.toThrow('not found');
+  });
+
+  it('throws 403 when customer tries to update another users booking', async () => {
+    prisma.booking.findUnique.mockResolvedValue({
+      id: 'bk-1', userId: 'other-user', slotId: 'slot-old', status: 'CONFIRMED',
+      slot: futureSlot, payment: null,
+    });
+    await expect(
+      BookingService.updateSlot(prisma, 'bk-1', 'slot-new', 'user-1', 'CUSTOMER'),
+    ).rejects.toThrow('do not have access');
+  });
+
+  it('throws 400 when booking is CANCELLED', async () => {
+    prisma.booking.findUnique.mockResolvedValue({
+      id: 'bk-1', userId: 'user-1', slotId: 'slot-old', status: 'CANCELLED',
+      slot: futureSlot, payment: null,
+    });
+    await expect(
+      BookingService.updateSlot(prisma, 'bk-1', 'slot-new', 'user-1', 'CUSTOMER'),
+    ).rejects.toThrow('Only PENDING or CONFIRMED');
+  });
+
+  it('throws 400 when new slot is same as current', async () => {
+    await expect(
+      BookingService.updateSlot(prisma, 'bk-1', 'slot-old', 'user-1', 'CUSTOMER'),
+    ).rejects.toThrow('same as the current');
+  });
+
+  it('throws 400 when price goes up but no extraPaymentMethod', async () => {
+    await expect(
+      BookingService.updateSlot(prisma, 'bk-1', 'slot-new', 'user-1', 'CUSTOMER'),
+    ).rejects.toThrow('extraPaymentMethod is required');
+  });
+
+  it('throws 409 when new slot is fully booked', async () => {
+    prisma.booking.count.mockResolvedValue(4); // capacity is 4
+    await expect(
+      BookingService.updateSlot(prisma, 'bk-1', 'slot-new', 'user-1', 'CUSTOMER', 'OFFLINE'),
+    ).rejects.toThrow('fully booked');
+  });
+
+  it('issues partial Razorpay refund when price goes down on paid online booking', async () => {
+    const cheapSlot = { ...newSlot, facility: { ...newSlot.facility, pricePerSlot: 300 } };
+    prisma.slot.findUnique.mockResolvedValue(cheapSlot);
+    prisma.booking.findUnique
+      .mockResolvedValueOnce({
+        id: 'bk-1', userId: 'user-1', slotId: 'slot-old', status: 'CONFIRMED',
+        slot: futureSlot,
+        payment: { id: 'pay-1', status: 'SUCCESS', amount: 500, razorpayPaymentId: 'pay_rzp_1' },
+      })
+      .mockResolvedValueOnce({
+        id: 'bk-1', slotId: 'slot-new', slot: cheapSlot, payment: { id: 'pay-1', amount: 300 },
+      });
+
+    const result = await BookingService.updateSlot(prisma, 'bk-1', 'slot-new', 'user-1', 'CUSTOMER');
+    expect(PaymentService.refund).toHaveBeenCalledWith('pay_rzp_1', 200); // refund the difference
+    expect(result.refundedAmount).toBe(200);
+  });
+
+  it('creates Razorpay order for extra payment when price goes up with ONLINE', async () => {
+    prisma.booking.findUnique
+      .mockResolvedValueOnce({
+        id: 'bk-1', userId: 'user-1', slotId: 'slot-old', status: 'CONFIRMED',
+        slot: futureSlot,
+        payment: { id: 'pay-1', status: 'PENDING', amount: 500, razorpayPaymentId: null },
+      })
+      .mockResolvedValueOnce({
+        id: 'bk-1', slotId: 'slot-new', slot: newSlot, payment: { id: 'pay-1', amount: 1500 },
+      });
+
+    const result = await BookingService.updateSlot(prisma, 'bk-1', 'slot-new', 'user-1', 'CUSTOMER', 'ONLINE');
+    expect(PaymentService.createOrder).toHaveBeenCalledWith(1000, 'bk-1-extra');
+    expect(result.extraPayment).toBeDefined();
+    expect(result.extraPayment!.razorpayOrderId).toBe('order_extra_1');
+    expect(result.extraPayment!.amount).toBe(1000);
   });
 });

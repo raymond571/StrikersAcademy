@@ -18,6 +18,11 @@ const createSchema = z.object({
   notes: z.string().max(500).optional(),
 });
 
+const updateSlotSchema = z.object({
+  slotId: z.string().min(1, 'slotId is required'),
+  extraPaymentMethod: z.enum(['ONLINE', 'OFFLINE']).optional(),
+});
+
 const listQuerySchema = z.object({
   page: z
     .string()
@@ -125,5 +130,33 @@ export class BookingController {
       request.user.role,
     );
     return success({ booking }, 'Booking cancelled');
+  }
+
+  /**
+   * PATCH /api/bookings/:id/update-slot
+   * Reschedule a booking to a different slot
+   */
+  static async updateSlot(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = request.params as { id: string };
+    const parseResult = updateSlotSchema.safeParse(request.body);
+    if (!parseResult.success) {
+      return reply.status(400).send({
+        success: false,
+        error: 'Validation failed',
+        statusCode: 400,
+        details: parseResult.error.flatten().fieldErrors,
+      });
+    }
+
+    const result = await BookingService.updateSlot(
+      request.server.prisma,
+      id,
+      parseResult.data.slotId,
+      request.user.id,
+      request.user.role,
+      parseResult.data.extraPaymentMethod,
+    );
+
+    return success({ booking: result }, 'Booking updated');
   }
 }
