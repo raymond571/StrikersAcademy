@@ -445,21 +445,28 @@ chmod +x "${APP_DIR}/deployment/backup-db.sh"
 chmod +x "${APP_DIR}/deployment/restore-db.sh"
 success "Backup and restore scripts made executable."
 
-# Setup .pgpass for passwordless pg_dump
-PGPASS_FILE="/root/.pgpass"
-if [[ ! -f "$PGPASS_FILE" ]]; then
-    echo "127.0.0.1:5432:${DB_NAME}:${DB_USER}:${DB_PASSWORD}" > "$PGPASS_FILE"
-    chmod 600 "$PGPASS_FILE"
-    success "Created ${PGPASS_FILE} for passwordless pg_dump."
-else
-    # Update existing .pgpass if entry doesn't exist
-    if ! grep -qF "${DB_NAME}:${DB_USER}" "$PGPASS_FILE"; then
-        echo "127.0.0.1:5432:${DB_NAME}:${DB_USER}:${DB_PASSWORD}" >> "$PGPASS_FILE"
-        success "Added entry to existing ${PGPASS_FILE}."
+# Setup .pgpass for passwordless pg_dump (root + deploy user)
+for PGPASS_HOME in "/root" "/home/${DEPLOY_USER}"; do
+    PGPASS_FILE="${PGPASS_HOME}/.pgpass"
+    if [[ ! -f "$PGPASS_FILE" ]]; then
+        echo "127.0.0.1:5432:${DB_NAME}:${DB_USER}:${DB_PASSWORD}" > "$PGPASS_FILE"
+        chmod 600 "$PGPASS_FILE"
+        success "Created ${PGPASS_FILE} for passwordless pg_dump."
     else
-        warn ".pgpass entry already exists, skipping."
+        if ! grep -qF "${DB_NAME}:${DB_USER}" "$PGPASS_FILE"; then
+            echo "127.0.0.1:5432:${DB_NAME}:${DB_USER}:${DB_PASSWORD}" >> "$PGPASS_FILE"
+            success "Added entry to existing ${PGPASS_FILE}."
+        else
+            warn ".pgpass entry already exists in ${PGPASS_FILE}, skipping."
+        fi
     fi
-fi
+done
+chown ${DEPLOY_USER}:${DEPLOY_USER} "/home/${DEPLOY_USER}/.pgpass"
+success ".pgpass set up for both root and ${DEPLOY_USER}."
+
+# Make scripts executable
+chmod +x "${APP_DIR}/deployment/restore-from-gdrive.sh" 2>/dev/null || true
+chmod +x "${APP_DIR}/deployment/setup-gdrive-backup.sh" 2>/dev/null || true
 
 # Install cron job (idempotent)
 CRON_ENTRY="0 0 * * * ${BACKUP_SCRIPT} >> ${BACKUP_LOG} 2>&1"
