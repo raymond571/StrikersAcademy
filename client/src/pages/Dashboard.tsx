@@ -12,6 +12,7 @@ const STATUS_STYLES: Record<string, string> = {
   CANCELLED: 'bg-red-100 text-red-700',
   REFUNDED: 'bg-gray-100 text-gray-600',
   WAITLISTED: 'bg-blue-100 text-blue-700',
+  PARTIAL: 'bg-orange-100 text-orange-700',
 };
 
 function formatPaise(paise: number) {
@@ -314,20 +315,35 @@ function groupBookings(bookings: Booking[]): BookingGroup[] {
     groups[key].push(b);
   }
 
-  return Object.entries(groups).map(([key, items]) => ({
-    key,
-    batchId: items[0].batchId,
-    bookings: items.sort((a, b) => {
+  return Object.entries(groups).map(([key, items]) => {
+    const sorted = items.sort((a, b) => {
       const fA = a.slot?.facility?.name ?? '';
       const fB = b.slot?.facility?.name ?? '';
       if (fA !== fB) return fA.localeCompare(fB);
       return (a.slot?.startTime ?? '').localeCompare(b.slot?.startTime ?? '');
-    }),
-    totalPrice: items.reduce((sum, b) => sum + (b.payment?.amount ?? 0), 0),
-    status: items[0].status,
-    date: items[0].slot?.date ?? '',
-    paymentMethod: items[0].paymentMethod,
-  }));
+    });
+
+    // Derive group status from all bookings
+    const statuses = new Set(sorted.map(b => b.status));
+    let status: string;
+    if (statuses.size === 1) {
+      status = sorted[0].status; // all same
+    } else if (statuses.has('CONFIRMED') || statuses.has('PENDING')) {
+      status = 'PARTIAL'; // mix of active + cancelled
+    } else {
+      status = sorted[0].status; // all cancelled/refunded
+    }
+
+    return {
+      key,
+      batchId: sorted[0].batchId,
+      bookings: sorted,
+      totalPrice: sorted.reduce((sum, b) => sum + (b.payment?.amount ?? 0), 0),
+      status,
+      date: sorted[0].slot?.date ?? '',
+      paymentMethod: sorted[0].paymentMethod,
+    };
+  });
 }
 
 function CancelConfirmModal({ bookingId, onConfirm, onClose }: {
@@ -392,7 +408,7 @@ function BookingCard({ group, cancelling, onCancel, onCancelBatch, onUpdate }: {
   const [expanded, setExpanded] = useState(false);
   const [cancelTarget, setCancelTarget] = useState<string | null>(null);
   const isBatch = group.bookings.length > 1;
-  const canAct = group.status === 'PENDING' || group.status === 'CONFIRMED';
+  const canAct = group.status === 'PENDING' || group.status === 'CONFIRMED' || group.status === 'PARTIAL';
   const activeBookings = group.bookings.filter(b => b.status === 'PENDING' || b.status === 'CONFIRMED');
 
   const handleInvoice = (bookingId: string) => {
