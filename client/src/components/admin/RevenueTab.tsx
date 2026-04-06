@@ -50,10 +50,18 @@ export function RevenueTab() {
       {report && (
         <>
           {/* Summary cards */}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div className="card">
-              <p className="text-sm text-gray-500">Total Revenue</p>
+              <p className="text-sm text-gray-500">Gross Revenue</p>
               <p className="text-2xl font-bold text-gray-900">{formatPaise(report.totalRevenue)}</p>
+            </div>
+            <div className="card">
+              <p className="text-sm text-gray-500">Refunds</p>
+              <p className="text-2xl font-bold text-orange-500">{formatPaise(report.totalRefunds)} ({report.totalRefundCount})</p>
+            </div>
+            <div className="card">
+              <p className="text-sm text-gray-500">Net Revenue</p>
+              <p className="text-2xl font-bold text-emerald-600">{formatPaise(report.netRevenue)}</p>
             </div>
             <div className="card">
               <p className="text-sm text-gray-500">Online Payments</p>
@@ -78,6 +86,8 @@ export function RevenueTab() {
                   <tr className="border-b text-left text-gray-500">
                     <th className="pb-2 pr-4">Date</th>
                     <th className="pb-2 pr-4 text-right">Revenue</th>
+                    <th className="pb-2 pr-4 text-right">Refunds</th>
+                    <th className="pb-2 pr-4 text-right">Net</th>
                     <th className="pb-2 pr-4 text-right">Online</th>
                     <th className="pb-2 pr-4 text-right">Offline</th>
                     <th className="pb-2 text-right">Txns</th>
@@ -88,6 +98,8 @@ export function RevenueTab() {
                     <tr key={d.date} className="border-b border-gray-100">
                       <td className="py-2 pr-4 text-gray-900">{d.date}</td>
                       <td className="py-2 pr-4 text-right font-medium">{formatPaise(d.revenue)}</td>
+                      <td className="py-2 pr-4 text-right text-orange-500">{d.refunds ? formatPaise(d.refunds) : '—'}</td>
+                      <td className="py-2 pr-4 text-right font-medium text-emerald-600">{formatPaise(d.revenue - d.refunds)}</td>
                       <td className="py-2 pr-4 text-right text-green-600">{formatPaise(d.online)}</td>
                       <td className="py-2 pr-4 text-right text-blue-600">{formatPaise(d.offline)}</td>
                       <td className="py-2 text-right">{d.count}</td>

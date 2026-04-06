@@ -14,6 +14,9 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
 
   /** PATCH /api/bookings/:id/cancel — cancel a booking (auth required) */
   fastify.patch('/:id/cancel', { preHandler: [authenticate] }, BookingController.cancel);
+
+  /** PATCH /api/bookings/:id/update-slot — reschedule to a different slot (auth required) */
+  fastify.patch('/:id/update-slot', { preHandler: [authenticate] }, BookingController.updateSlot);
 };
 
 export default bookingRoutes;

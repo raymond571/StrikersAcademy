@@ -188,6 +188,168 @@ export const BookingService = {
     return booking!;
   },
 
+  /**
+   * Update a booking's slot (reschedule). Frees old slot, checks new slot capacity, recalculates price.
+   * Handles payment adjustments:
+   *  - Price DOWN + online paid → partial Razorpay refund for the difference
+   *  - Price UP + extraPaymentMethod 'ONLINE' → creates Razorpay order for the difference
+   *  - Price UP + extraPaymentMethod 'OFFLINE' → notes the extra owed at venue
+   */
+  async updateSlot(
+    prisma: PrismaClient,
+    bookingId: string,
+    newSlotId: string,
+    userId: string,
+    userRole: string,
+    extraPaymentMethod?: 'ONLINE' | 'OFFLINE',
+  ) {
+    const booking = await prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: { slot: { include: { facility: true } }, payment: true },
+    });
+
+    if (!booking) httpError('Booking not found', 404);
+    if (booking!.userId !== userId && userRole !== 'ADMIN' && userRole !== 'STAFF') {
+      httpError('You do not have access to this booking', 403);
+    }
+    if (!ACTIVE_STATUSES.includes(booking!.status)) {
+      httpError('Only PENDING or CONFIRMED bookings can be updated', 400);
+    }
+    if (booking!.slotId === newSlotId) {
+      httpError('New slot is the same as the current slot', 400);
+    }
+
+    // Pre-transaction: validate new slot
+    const newSlot = await prisma.slot.findUnique({
+      where: { id: newSlotId },
+      include: { facility: true },
+    });
+    if (!newSlot) httpError('New slot not found', 404);
+    if (!newSlot!.facility.isActive) httpError('Target facility is currently inactive', 400);
+
+    const oldPrice = booking!.payment?.amount ?? 0;
+    const newPrice = newSlot!.priceOverride ?? newSlot!.facility.pricePerSlot;
+    const priceDiff = newPrice - oldPrice;
+    const wasPaidOnline = booking!.payment?.status === 'SUCCESS' && booking!.payment?.razorpayPaymentId;
+
+    // If price went up, extraPaymentMethod is required
+    if (priceDiff > 0 && !extraPaymentMethod) {
+      httpError('extraPaymentMethod is required when the new slot costs more', 400);
+    }
+
+    // If price went up and they want to pay extra online, create Razorpay order BEFORE transaction
+    let razorpayOrder: { id: string } | null = null;
+    if (priceDiff > 0 && extraPaymentMethod === 'ONLINE') {
+      try {
+        razorpayOrder = await PaymentService.createOrder(priceDiff, `${bookingId}-extra`);
+      } catch (err: any) {
+        const msg = err?.error?.description || err?.message || 'Razorpay order creation failed';
+        httpError(`Payment gateway error: ${msg}`, 502);
+      }
+    }
+
+    // If price went down and was paid online, issue partial refund BEFORE transaction
+    if (priceDiff < 0 && wasPaidOnline) {
+      try {
+        await PaymentService.refund(booking!.payment!.razorpayPaymentId!, Math.abs(priceDiff));
+      } catch (err: unknown) {
+        const msg = (err as { error?: { description?: string } })?.error?.description
+          || (err as Error)?.message || 'Razorpay partial refund failed';
+        httpError(`Refund failed: ${msg}`, 502);
+      }
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      // Check availability blocks on new slot
+      const blocks = await tx.availabilityBlock.findMany({
+        where: {
+          date: newSlot!.date,
+          OR: [{ facilityId: newSlot!.facilityId }, { facilityId: null }],
+        },
+      });
+      const isBlocked = blocks.some((block) => {
+        if (!block.startTime || !block.endTime) return true;
+        return newSlot!.startTime >= block.startTime && newSlot!.startTime < block.endTime;
+      });
+      if (isBlocked) httpError('The new slot is blocked and not available', 400);
+
+      // Check capacity on new slot (exclude current booking from count)
+      const activeBookings = await tx.booking.count({
+        where: {
+          slotId: newSlotId,
+          status: { in: ACTIVE_STATUSES },
+          id: { not: bookingId },
+        },
+      });
+      if (activeBookings >= newSlot!.capacity) {
+        httpError('The new slot is fully booked', 409);
+      }
+
+      // Check duplicate booking by same user on new slot
+      const duplicate = await tx.booking.findFirst({
+        where: {
+          userId: booking!.userId,
+          slotId: newSlotId,
+          status: { in: ACTIVE_STATUSES },
+          id: { not: bookingId },
+        },
+      });
+      if (duplicate) {
+        httpError('You already have an active booking for the new slot', 409);
+      }
+
+      // Update booking to new slot
+      await tx.booking.update({
+        where: { id: bookingId },
+        data: { slotId: newSlotId },
+      });
+
+      // Update payment
+      if (booking!.payment) {
+        const paymentUpdate: Record<string, unknown> = { amount: newPrice };
+
+        if (priceDiff > 0 && extraPaymentMethod === 'ONLINE' && razorpayOrder) {
+          // Store the extra payment order — booking stays CONFIRMED, payment needs extra collection
+          paymentUpdate.razorpayOrderId = razorpayOrder.id;
+        }
+
+        await tx.payment.update({
+          where: { id: booking!.payment.id },
+          data: paymentUpdate,
+        });
+      }
+
+      // Re-fetch to get updated state
+      return tx.booking.findUnique({
+        where: { id: bookingId },
+        include: {
+          slot: { include: { facility: true } },
+          payment: true,
+        },
+      });
+    });
+
+    return {
+      ...result!,
+      newPrice,
+      oldPrice,
+      priceDiff,
+      // If extra online payment needed, include Razorpay order details for frontend
+      ...(razorpayOrder ? {
+        extraPayment: {
+          razorpayOrderId: razorpayOrder.id,
+          amount: priceDiff,
+          currency: 'INR',
+          keyId: process.env.RAZORPAY_KEY_ID,
+        },
+      } : {}),
+      // If partial refund was issued
+      ...(priceDiff < 0 && wasPaidOnline ? {
+        refundedAmount: Math.abs(priceDiff),
+      } : {}),
+    };
+  },
+
   /** Cancel a booking if within the cancellation window */
   async cancelBooking(
     prisma: PrismaClient,
@@ -222,21 +384,16 @@ export const BookingService = {
       }
     }
 
-    // Cancel booking and update payment status
+    // Cancel booking and process refund if applicable
     return prisma.$transaction(async (tx) => {
-      const updated = await tx.booking.update({
-        where: { id: bookingId },
-        data: { status: 'CANCELLED' },
-        include: {
-          slot: { include: { facility: true } },
-          payment: true,
-        },
-      });
+      // Check if refund is needed (paid online)
+      const payment = booking!.payment;
+      const needsRefund = payment && payment.status === 'SUCCESS' && payment.razorpayPaymentId;
 
-      // Refund via Razorpay if it was paid online
-      if (updated.payment && updated.payment.status === 'SUCCESS' && updated.payment.razorpayPaymentId) {
+      // Issue Razorpay refund before updating statuses
+      if (needsRefund) {
         try {
-          await PaymentService.refund(updated.payment.razorpayPaymentId, updated.payment.amount);
+          await PaymentService.refund(payment.razorpayPaymentId!, payment.amount);
         } catch (err: unknown) {
           const msg = (err as { error?: { description?: string } })?.error?.description
             || (err as Error)?.message || 'Razorpay refund failed';
@@ -244,10 +401,20 @@ export const BookingService = {
         }
 
         await tx.payment.update({
-          where: { id: updated.payment.id },
+          where: { id: payment.id },
           data: { status: 'REFUNDED', refundedAt: new Date() },
         });
       }
+
+      // Set booking to REFUNDED if refund was processed, otherwise CANCELLED
+      const updated = await tx.booking.update({
+        where: { id: bookingId },
+        data: { status: needsRefund ? 'REFUNDED' : 'CANCELLED' },
+        include: {
+          slot: { include: { facility: true } },
+          payment: true,
+        },
+      });
 
       return updated;
     });

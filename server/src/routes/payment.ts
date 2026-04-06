@@ -18,6 +18,12 @@ const paymentRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post('/verify', { preHandler: [authenticate] }, PaymentController.verify);
 
   /**
+   * POST /api/payments/verify-extra
+   * Auth required — verify extra payment after reschedule
+   */
+  fastify.post('/verify-extra', { preHandler: [authenticate] }, PaymentController.verifyExtra);
+
+  /**
    * POST /api/payments/webhook
    * Public — Razorpay webhook endpoint (verified via signature header)
    * Register this URL in Razorpay dashboard

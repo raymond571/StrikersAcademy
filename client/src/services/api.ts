@@ -107,10 +107,23 @@ export const facilityApi = {
   },
 };
 
+export interface UpdateSlotResponse extends Booking {
+  newPrice: number;
+  oldPrice: number;
+  priceDiff: number;
+  extraPayment?: {
+    razorpayOrderId: string;
+    amount: number;
+    currency: string;
+    keyId: string;
+  };
+  refundedAmount?: number;
+}
+
 // ── Bookings ──────────────────────────────────────────────────
 export const bookingApi = {
-  async create(slotId: string): Promise<Booking> {
-    const res = await api.post<{ data: { booking: Booking } }>('/api/bookings', { slotId });
+  async create(slotId: string, paymentMethod: 'ONLINE' | 'OFFLINE' = 'ONLINE'): Promise<Booking> {
+    const res = await api.post<{ data: { booking: Booking } }>('/api/bookings', { slotId, paymentMethod });
     return res.data.data.booking;
   },
 
@@ -128,6 +141,14 @@ export const bookingApi = {
     const res = await api.patch<{ data: { booking: Booking } }>(`/api/bookings/${id}/cancel`);
     return res.data.data.booking;
   },
+
+  async updateSlot(id: string, slotId: string, extraPaymentMethod?: 'ONLINE' | 'OFFLINE'): Promise<UpdateSlotResponse> {
+    const res = await api.patch<{ data: { booking: UpdateSlotResponse } }>(`/api/bookings/${id}/update-slot`, {
+      slotId,
+      ...(extraPaymentMethod ? { extraPaymentMethod } : {}),
+    });
+    return res.data.data.booking;
+  },
 };
 
 // ── Payments ──────────────────────────────────────────────────
@@ -143,6 +164,10 @@ export const paymentApi = {
   async verify(payload: VerifyPaymentPayload): Promise<void> {
     await api.post('/api/payments/verify', payload);
   },
+
+  async verifyExtra(payload: VerifyPaymentPayload): Promise<void> {
+    await api.post('/api/payments/verify-extra', payload);
+  },
 };
 
 // ── Admin ────────────────────────────────────────────────────
@@ -153,6 +178,8 @@ export interface DashboardStats {
   activeFacilities: number;
   totalUsers: number;
   totalRevenue: number;
+  totalRefunds: number;
+  netRevenue: number;
 }
 
 export interface AdminBooking extends Booking {

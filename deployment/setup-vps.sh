@@ -60,7 +60,11 @@ read -r
 # ─────────────────────────────────────────────────────────────
 # STEP 1: System Updates
 # ─────────────────────────────────────────────────────────────
-header "1/18  System Updates"
+header "1/19  System Updates"
+
+info "Setting timezone to Asia/Kolkata (IST)..."
+timedatectl set-timezone Asia/Kolkata
+success "Timezone set to $(timedatectl show -p Timezone --value) (IST, UTC+5:30)."
 
 info "Running apt update && upgrade..."
 export DEBIAN_FRONTEND=noninteractive
@@ -71,7 +75,7 @@ success "System updated."
 # ─────────────────────────────────────────────────────────────
 # STEP 2: Create Deploy User
 # ─────────────────────────────────────────────────────────────
-header "2/18  Create Deploy User"
+header "2/19  Create Deploy User"
 
 if id "${DEPLOY_USER}" &>/dev/null; then
     warn "User '${DEPLOY_USER}' already exists, skipping creation."
@@ -94,7 +98,7 @@ fi
 # ─────────────────────────────────────────────────────────────
 # STEP 3: Firewall (UFW)
 # ─────────────────────────────────────────────────────────────
-header "3/18  Firewall (UFW)"
+header "3/19  Firewall (UFW)"
 
 if command -v ufw &>/dev/null; then
     info "Configuring UFW..."
@@ -120,7 +124,7 @@ fi
 # ─────────────────────────────────────────────────────────────
 # STEP 4: Install Essentials
 # ─────────────────────────────────────────────────────────────
-header "4/18  Install Essentials"
+header "4/19  Install Essentials"
 
 info "Installing curl, git, build-essential, unzip..."
 apt install -y curl git build-essential unzip
@@ -129,7 +133,7 @@ success "Essentials installed."
 # ─────────────────────────────────────────────────────────────
 # STEP 5: Install Node.js v20 LTS
 # ─────────────────────────────────────────────────────────────
-header "5/18  Install Node.js v20 LTS"
+header "5/19  Install Node.js v20 LTS"
 
 if command -v node &>/dev/null && node -v | grep -q "^v20"; then
     warn "Node.js $(node -v) is already installed, skipping."
@@ -145,7 +149,7 @@ info "Node: $(node -v), npm: $(npm -v)"
 # ─────────────────────────────────────────────────────────────
 # STEP 6: Install PM2
 # ─────────────────────────────────────────────────────────────
-header "6/18  Install PM2"
+header "6/19  Install PM2"
 
 if command -v pm2 &>/dev/null; then
     warn "PM2 is already installed, skipping."
@@ -163,7 +167,7 @@ success "PM2 log directory created at /var/log/pm2."
 # ─────────────────────────────────────────────────────────────
 # STEP 7: Install PostgreSQL
 # ─────────────────────────────────────────────────────────────
-header "7/18  Install PostgreSQL"
+header "7/19  Install PostgreSQL"
 
 if command -v psql &>/dev/null; then
     warn "PostgreSQL is already installed, skipping installation."
@@ -199,7 +203,7 @@ fi
 # ─────────────────────────────────────────────────────────────
 # STEP 8: Install Nginx
 # ─────────────────────────────────────────────────────────────
-header "8/18  Install Nginx"
+header "8/19  Install Nginx"
 
 if command -v nginx &>/dev/null; then
     warn "Nginx is already installed, skipping."
@@ -219,7 +223,7 @@ success "Nginx enabled, default site removed."
 # ─────────────────────────────────────────────────────────────
 # STEP 9: Create App Directory
 # ─────────────────────────────────────────────────────────────
-header "9/18  Create App Directory"
+header "9/19  Create App Directory"
 
 if [[ -d "$APP_DIR" ]]; then
     warn "App directory ${APP_DIR} already exists."
@@ -234,7 +238,7 @@ success "Ownership set to ${DEPLOY_USER}."
 # ─────────────────────────────────────────────────────────────
 # STEP 10: Clone the Repo
 # ─────────────────────────────────────────────────────────────
-header "10/18  Clone Repository"
+header "10/19  Clone Repository"
 
 if [[ -d "${APP_DIR}/.git" ]]; then
     warn "Repository already cloned. Pulling latest..."
@@ -251,7 +255,7 @@ fi
 # ─────────────────────────────────────────────────────────────
 # STEP 11: Setup SSL Directory
 # ─────────────────────────────────────────────────────────────
-header "11/18  Setup SSL Directory"
+header "11/19  Setup SSL Directory"
 
 mkdir -p /etc/ssl/cloudflare
 success "Created /etc/ssl/cloudflare/"
@@ -277,7 +281,7 @@ echo -e "  ${CYAN}5. Run: chmod 644 /etc/ssl/cloudflare/origin.pem${NC}"
 # ─────────────────────────────────────────────────────────────
 # STEP 12: Copy Nginx Configs
 # ─────────────────────────────────────────────────────────────
-header "12/18  Copy Nginx Configs"
+header "12/19  Copy Nginx Configs"
 
 info "Copying site config..."
 cp "${APP_DIR}/deployment/nginx/strickersacademy.conf" /etc/nginx/sites-available/strickersacademy
@@ -292,7 +296,7 @@ success "Cloudflare origin-pull snippet installed."
 # ─────────────────────────────────────────────────────────────
 # STEP 13: Setup .env File
 # ─────────────────────────────────────────────────────────────
-header "13/18  Setup Environment File"
+header "13/19  Setup Environment File"
 
 ENV_FILE="${APP_DIR}/server/.env"
 
@@ -328,7 +332,7 @@ echo -e "  ${CYAN}- RAZORPAY_WEBHOOK_SECRET${NC}"
 # ─────────────────────────────────────────────────────────────
 # STEP 14: Install npm Dependencies
 # ─────────────────────────────────────────────────────────────
-header "14/18  Install npm Dependencies"
+header "14/19  Install npm Dependencies"
 
 info "Running npm ci in ${APP_DIR}..."
 cd "$APP_DIR"
@@ -338,7 +342,7 @@ success "npm dependencies installed."
 # ─────────────────────────────────────────────────────────────
 # STEP 15: Run Prisma Migrations
 # ─────────────────────────────────────────────────────────────
-header "15/18  Run Prisma Migrations"
+header "15/19  Run Prisma Migrations"
 
 info "Generating Prisma client..."
 cd "$APP_DIR"
@@ -352,7 +356,7 @@ success "Database migrations applied."
 # ─────────────────────────────────────────────────────────────
 # STEP 16: Build the App
 # ─────────────────────────────────────────────────────────────
-header "16/18  Build the App"
+header "16/19  Build the App"
 
 cd "$APP_DIR"
 
@@ -371,7 +375,7 @@ success "Client built."
 # ─────────────────────────────────────────────────────────────
 # STEP 17: Start with PM2
 # ─────────────────────────────────────────────────────────────
-header "17/18  Start with PM2"
+header "17/19  Start with PM2"
 
 info "Starting app with PM2..."
 cd "$APP_DIR"
@@ -395,7 +399,7 @@ success "PM2 startup configured."
 # ─────────────────────────────────────────────────────────────
 # STEP 18: Reload Nginx & Health Check
 # ─────────────────────────────────────────────────────────────
-header "18/18  Nginx Reload & Health Check"
+header "18/19  Nginx Reload & Health Check"
 
 info "Testing Nginx configuration..."
 if nginx -t 2>&1; then
@@ -421,6 +425,65 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────
+# STEP 19: Database Backup Cron
+# ─────────────────────────────────────────────────────────────
+header "19/19  Database Backup Cron"
+
+BACKUP_DIR="/var/backups/strikersacademy"
+BACKUP_SCRIPT="${APP_DIR}/deployment/backup-db.sh"
+BACKUP_LOG="/var/log/strikersacademy-backup.log"
+
+info "Setting up daily database backup..."
+
+# Create backup directory and log file
+mkdir -p "$BACKUP_DIR"
+touch "$BACKUP_LOG"
+success "Created ${BACKUP_DIR} and ${BACKUP_LOG}"
+
+# Make scripts executable
+chmod +x "${APP_DIR}/deployment/backup-db.sh"
+chmod +x "${APP_DIR}/deployment/restore-db.sh"
+success "Backup and restore scripts made executable."
+
+# Setup .pgpass for passwordless pg_dump
+PGPASS_FILE="/root/.pgpass"
+if [[ ! -f "$PGPASS_FILE" ]]; then
+    echo "127.0.0.1:5432:${DB_NAME}:${DB_USER}:${DB_PASSWORD}" > "$PGPASS_FILE"
+    chmod 600 "$PGPASS_FILE"
+    success "Created ${PGPASS_FILE} for passwordless pg_dump."
+else
+    # Update existing .pgpass if entry doesn't exist
+    if ! grep -qF "${DB_NAME}:${DB_USER}" "$PGPASS_FILE"; then
+        echo "127.0.0.1:5432:${DB_NAME}:${DB_USER}:${DB_PASSWORD}" >> "$PGPASS_FILE"
+        success "Added entry to existing ${PGPASS_FILE}."
+    else
+        warn ".pgpass entry already exists, skipping."
+    fi
+fi
+
+# Install cron job (idempotent)
+CRON_ENTRY="0 0 * * * ${BACKUP_SCRIPT} >> ${BACKUP_LOG} 2>&1"
+EXISTING_CRON=$(crontab -l 2>/dev/null || true)
+if echo "$EXISTING_CRON" | grep -qF "backup-db.sh"; then
+    warn "Backup cron job already exists, skipping."
+else
+    (echo "$EXISTING_CRON"; echo ""; echo "# StrikersAcademy daily DB backup at midnight IST"; echo "CRON_TZ=Asia/Kolkata"; echo "$CRON_ENTRY") | crontab -
+    success "Installed cron job: daily at 00:00 IST (Asia/Kolkata)"
+fi
+
+# Run a test backup
+info "Running test backup..."
+if bash "$BACKUP_SCRIPT"; then
+    success "Test backup completed successfully."
+else
+    warn "Test backup failed. Check PostgreSQL connectivity and credentials."
+fi
+
+success "Backup schedule: Every day at 00:00"
+success "Backups stored in: ${BACKUP_DIR} (30-day retention)"
+success "Restore with: sudo bash ${APP_DIR}/deployment/restore-db.sh"
+
+# ─────────────────────────────────────────────────────────────
 # SUMMARY
 # ─────────────────────────────────────────────────────────────
 header "Setup Complete!"
@@ -439,6 +502,8 @@ echo -e "  .env file:       ${BOLD}${ENV_FILE}${NC}"
 echo -e "  Nginx config:    ${BOLD}/etc/nginx/sites-available/strickersacademy${NC}"
 echo -e "  SSL certs dir:   ${BOLD}/etc/ssl/cloudflare/${NC}"
 echo -e "  PM2 logs:        ${BOLD}/var/log/pm2/${NC}"
+echo -e "  DB backups:      ${BOLD}/var/backups/strikersacademy/${NC} (daily at 00:00, 30-day retention)"
+echo -e "  Backup log:      ${BOLD}/var/log/strikersacademy-backup.log${NC}"
 echo ""
 
 echo -e "${YELLOW}${BOLD}Next Steps (manual)${NC}"

@@ -15,6 +15,8 @@ export interface Slot {
   isAvailable: boolean;
   /** Price override in paise — null means use facility.pricePerSlot */
   priceOverride: number | null;
+  /** Resolved price: priceOverride ?? facility.pricePerSlot */
+  effectivePrice?: number;
   facility?: import('./facility').Facility;
 }
 

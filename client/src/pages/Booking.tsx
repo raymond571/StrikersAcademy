@@ -4,6 +4,10 @@ import { Layout } from '../components/layout/Layout';
 import { facilityApi, bookingApi } from '../services/api';
 import type { Facility, Slot } from '@strikers/shared';
 
+function formatPaise(paise: number) {
+  return `₹${(paise / 100).toLocaleString('en-IN')}`;
+}
+
 export default function BookingPage() {
   const navigate = useNavigate();
 
@@ -12,6 +16,7 @@ export default function BookingPage() {
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [slots, setSlots] = useState<Slot[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<string>('');
+  const [paymentMethod, setPaymentMethod] = useState<'ONLINE' | 'OFFLINE'>('ONLINE');
   const [isLoading, setIsLoading] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,8 +45,12 @@ export default function BookingPage() {
     setIsBooking(true);
     setError(null);
     try {
-      const booking = await bookingApi.create(selectedSlot);
-      navigate(`/payment/${booking.id}`);
+      const booking = await bookingApi.create(selectedSlot, paymentMethod);
+      if (paymentMethod === 'ONLINE') {
+        navigate(`/payment/${booking.id}`);
+      } else {
+        navigate('/dashboard');
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Booking failed');
     } finally {
@@ -51,6 +60,9 @@ export default function BookingPage() {
 
   // Min date = today
   const today = new Date().toISOString().split('T')[0];
+
+  const selectedSlotData = slots.find((s) => s.id === selectedSlot);
+  const slotPrice = selectedSlotData?.effectivePrice;
 
   return (
     <Layout>
@@ -138,6 +150,47 @@ export default function BookingPage() {
           </div>
         )}
 
+        {/* Step 4: Payment Method */}
+        {selectedSlot && (
+          <div className="card">
+            <h2 className="text-base font-semibold text-gray-900 mb-4">
+              4. Payment Method
+            </h2>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setPaymentMethod('ONLINE')}
+                className={`flex-1 rounded-lg border p-4 text-left transition-colors ${
+                  paymentMethod === 'ONLINE'
+                    ? 'border-brand-500 bg-brand-50'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className="font-medium text-gray-900">Pay Online</div>
+                <div className="text-xs text-gray-500 mt-1">UPI / Razorpay</div>
+              </button>
+              <button
+                onClick={() => setPaymentMethod('OFFLINE')}
+                className={`flex-1 rounded-lg border p-4 text-left transition-colors ${
+                  paymentMethod === 'OFFLINE'
+                    ? 'border-brand-500 bg-brand-50'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className="font-medium text-gray-900">Pay at Venue</div>
+                <div className="text-xs text-gray-500 mt-1">Cash / UPI at counter</div>
+              </button>
+            </div>
+
+            {/* Price summary */}
+            {slotPrice != null && (
+              <div className="mt-4 rounded-lg bg-gray-50 p-3 flex items-center justify-between">
+                <span className="text-sm text-gray-600">Slot Price</span>
+                <span className="text-lg font-bold text-gray-900">{formatPaise(slotPrice)}</span>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Confirm */}
         {selectedSlot && (
           <button
@@ -145,7 +198,11 @@ export default function BookingPage() {
             disabled={isBooking}
             className="btn-primary w-full text-base py-3"
           >
-            {isBooking ? 'Creating booking...' : 'Confirm & Proceed to Payment'}
+            {isBooking
+              ? 'Creating booking...'
+              : paymentMethod === 'ONLINE'
+              ? 'Confirm & Proceed to Payment'
+              : 'Confirm Booking (Pay at Venue)'}
           </button>
         )}
       </div>
