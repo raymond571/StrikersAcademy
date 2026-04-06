@@ -1,0 +1,82 @@
+name: Database Restore
+
+on:
+  workflow_dispatch:
+    inputs:
+      backup_file:
+        description: 'Backup filename (leave empty for latest)'
+        required: false
+        default: ''
+      confirm:
+        description: 'Type RESTORE to confirm (this replaces the database!)'
+        required: true
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Validate confirmation
+        if: ${{ github.event.inputs.confirm != 'RESTORE' }}
+        run: |
+          echo "ERROR: You must type RESTORE to confirm. Got: '${{ github.event.inputs.confirm }}'"
+          exit 1
+
+      - name: Restore database on VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          command_timeout: 10m
+          script: |
+            set -euo pipefail
+
+            BACKUP_DIR="/var/backups/strikersacademy"
+            DB_NAME="strikersacademy"
+            DB_USER="strikers_user"
+            DB_HOST="127.0.0.1"
+            DB_PORT="5432"
+            REQUESTED_FILE="${{ github.event.inputs.backup_file }}"
+
+            # Select backup file
+            if [ -n "$REQUESTED_FILE" ]; then
+              BACKUP_FILE="${BACKUP_DIR}/${REQUESTED_FILE}"
+            else
+              # Get the latest backup
+              BACKUP_FILE=$(ls -t ${BACKUP_DIR}/${DB_NAME}_*.sql.gz 2>/dev/null | head -1)
+            fi
+
+            if [ ! -f "$BACKUP_FILE" ]; then
+              echo "ERROR: Backup file not found: $BACKUP_FILE"
+              echo "Available backups:"
+              ls -lh ${BACKUP_DIR}/${DB_NAME}_*.sql.gz 2>/dev/null || echo "No backups found"
+              exit 1
+            fi
+
+            echo "Restoring from: $(basename $BACKUP_FILE)"
+            echo "Size: $(du -h $BACKUP_FILE | cut -f1)"
+
+            # Stop the app
+            echo "Stopping StrikersAcademy..."
+            pm2 stop strikers-api 2>/dev/null || true
+
+            # Drop and recreate
+            echo "Dropping and recreating database..."
+            PGPASSFILE=/root/.pgpass psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d postgres -c "DROP DATABASE IF EXISTS ${DB_NAME};" 2>/dev/null || \
+              psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d postgres -c "DROP DATABASE IF EXISTS ${DB_NAME};"
+            PGPASSFILE=/root/.pgpass psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d postgres -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};" 2>/dev/null || \
+              psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d postgres -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};"
+
+            # Restore
+            echo "Restoring..."
+            gunzip -c "$BACKUP_FILE" | psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -q
+
+            # Restart
+            echo "Starting StrikersAcademy..."
+            pm2 start strikers-api
+
+            echo ""
+            echo "Restore complete from: $(basename $BACKUP_FILE)"

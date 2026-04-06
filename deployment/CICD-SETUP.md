@@ -302,6 +302,66 @@ PostgreSQL (port 5432, localhost only)
 
 ---
 
+## Backup & Restore Pipelines
+
+### Automatic Daily Backup
+
+A GitHub Actions workflow runs daily at **00:00 IST** (18:30 UTC):
+- SSHs into VPS and runs `backup-db.sh`
+- Creates a compressed PostgreSQL dump in `/var/backups/strikersacademy/`
+- Uploads to Google Drive (if rclone is configured)
+- 30-day retention on both local and Google Drive
+
+Also runs via the VPS cron job as a redundant backup.
+
+### Manual Backup
+
+Go to: Actions > **Database Backup** > **Run workflow** > optionally add a reason > **Run**
+
+### Manual Restore
+
+Go to: Actions > **Database Restore** > **Run workflow**:
+- **backup_file**: leave empty for latest, or enter a specific filename
+- **confirm**: type `RESTORE` (safety check — this replaces the entire database)
+
+The workflow:
+1. Finds the backup file on VPS
+2. Stops PM2
+3. Drops and recreates the database
+4. Restores from the backup
+5. Restarts PM2
+
+### Google Drive Backup (Optional — setup later)
+
+Backs up to Google Drive for disaster recovery. One-time setup on VPS:
+
+```bash
+sudo bash /var/www/strickersacademy/deployment/setup-gdrive-backup.sh
+```
+
+This installs `rclone` and guides through Google Drive authentication.
+After setup, daily backups auto-upload to `StrikersAcademy-Backups/` on Google Drive.
+
+**Disaster recovery from Google Drive (fresh VPS):**
+```bash
+# 1. Install rclone
+curl https://rclone.org/install.sh | sudo bash
+
+# 2. Configure rclone (add 'gdrive' remote with your Google account)
+rclone config
+
+# 3. List available backups
+bash deployment/restore-from-gdrive.sh --list
+
+# 4. Restore latest backup
+bash deployment/restore-from-gdrive.sh
+
+# 5. Run full VPS setup
+bash deployment/setup-vps.sh
+```
+
+---
+
 ## Branch Strategy
 
 | Branch | Environment | Trigger | Razorpay |
