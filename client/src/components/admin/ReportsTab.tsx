@@ -108,6 +108,28 @@ export function ReportsTab() {
         <button onClick={generateReport} disabled={loading} className="btn-primary">
           {loading ? 'Loading...' : 'Generate'}
         </button>
+        {revenue && (
+          <button
+            onClick={async () => {
+              try {
+                const res = await fetch(`/api/admin/reports/revenue/pdf?from=${from}&to=${to}`, { credentials: 'include' });
+                if (!res.ok) { alert('Failed to download'); return; }
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `revenue-${from}-to-${to}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+              } catch { alert('Failed to download PDF'); }
+            }}
+            className="btn-secondary"
+          >
+            Download PDF
+          </button>
+        )}
       </div>
 
       {/* Section switcher */}
