@@ -57,11 +57,11 @@ echo ""
 echo "→ Generating Prisma client..."
 npm run db:generate --workspace=server
 
-# ── 5. Run database migrations ───────────────────────────────
+# ── 5. Sync database schema ────────────��─────────────────────
 echo ""
-echo "→ Running database migrations..."
+echo "→ Pushing database schema..."
 cd "$APP_DIR/server"
-npx prisma migrate deploy
+npx prisma db push --accept-data-loss 2>/dev/null || npx prisma db push
 cd "$APP_DIR"
 
 # ── 6. Build shared types ────────────────────────────────────
