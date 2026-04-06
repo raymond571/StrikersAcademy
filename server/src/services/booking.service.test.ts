@@ -11,6 +11,13 @@ vi.mock('./payment.service', () => ({
 }));
 import { PaymentService } from './payment.service';
 
+// Mock SettingsService
+vi.mock('./settings.service', () => ({
+  SettingsService: {
+    getCancellationChargePercent: vi.fn().mockResolvedValue(10), // 10% charge
+  },
+}));
+
 function createMockTx() {
   return {
     slot: { findUnique: vi.fn() },
@@ -356,8 +363,8 @@ describe('BookingService.cancelBooking', () => {
 
     const result = await BookingService.cancelBooking(prisma, 'bk-1', 'user-1', 'CUSTOMER');
 
-    // Should call Razorpay refund
-    expect(PaymentService.refund).toHaveBeenCalledWith('pay_rzp_1', 500);
+    // Should call Razorpay refund (500 - 10% charge = 450)
+    expect(PaymentService.refund).toHaveBeenCalledWith('pay_rzp_1', 450);
     // Should update payment to REFUNDED
     expect(prisma.payment.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -435,8 +442,8 @@ describe('BookingService.cancelBooking', () => {
 
     await BookingService.cancelBooking(prisma, 'bk-1', 'user-1', 'CUSTOMER');
 
-    // Should refund only the remaining ₹500 (1500 captured - 1000 already refunded)
-    expect(PaymentService.refund).toHaveBeenCalledWith('pay_rzp_1', 500);
+    // Remaining on Razorpay: 500. Charge: 10% of 500 = 50. Refund: min(450, 500) = 450
+    expect(PaymentService.refund).toHaveBeenCalledWith('pay_rzp_1', 450);
   });
 });
 

@@ -1,6 +1,8 @@
 import { FastifyPluginAsync } from 'fastify';
 import { authenticate } from '../middleware/authenticate';
 import { BookingController } from '../controllers/booking.controller';
+import { InvoiceController } from '../controllers/invoice.controller';
+import { SettingsController } from '../controllers/settings.controller';
 
 const bookingRoutes: FastifyPluginAsync = async (fastify) => {
   /** POST /api/bookings — create a single booking (auth required) */
@@ -20,6 +22,12 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
 
   /** PATCH /api/bookings/:id/update-slot — reschedule to a different slot (auth required) */
   fastify.patch('/:id/update-slot', { preHandler: [authenticate] }, BookingController.updateSlot);
+
+  /** GET /api/bookings/:id/cancel-preview — get cancellation charges before cancelling */
+  fastify.get('/:id/cancel-preview', { preHandler: [authenticate] }, SettingsController.getCancellationPreview);
+
+  /** GET /api/bookings/:id/invoice — download PDF invoice */
+  fastify.get('/:id/invoice', { preHandler: [authenticate] }, InvoiceController.download);
 };
 
 export default bookingRoutes;

@@ -165,6 +165,8 @@ model Payment {
   razorpayPaymentId String?                        // set after successful payment
   razorpaySignature String?                        // verified signature stored for audit
   status            String    @default("PENDING")  // PaymentStatus
+  cancellationCharge Int?                          // paise deducted as cancellation fee
+  refundAmount      Int?                           // paise actually refunded (amount - charge)
   paidAt            DateTime?
   refundedAt        DateTime?
   createdAt         DateTime  @default(now())
@@ -260,4 +262,15 @@ model GalleryImage {
   createdAt DateTime @default(now())
 
   @@map("gallery_images")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Settings (key-value pairs for admin configuration)
+// ─────────────────────────────────────────────────────────────
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("settings")
 }

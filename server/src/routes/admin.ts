@@ -1,6 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { authenticate, requireAdmin, requireStaffOrAdmin } from '../middleware/authenticate';
 import { AdminController } from '../controllers/admin.controller';
+import { SettingsController } from '../controllers/settings.controller';
 
 const adminRoutes: FastifyPluginAsync = async (fastify) => {
   // ── ADMIN + STAFF ────────────────────────────────────────────
@@ -22,6 +23,10 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/coupons', { preHandler: [authenticate, requireAdmin] }, AdminController.listCoupons);
   fastify.post('/coupons', { preHandler: [authenticate, requireAdmin] }, AdminController.createCoupon);
   fastify.patch('/coupons/:id', { preHandler: [authenticate, requireAdmin] }, AdminController.updateCoupon);
+
+  // ── Settings (ADMIN only) ────────────────────────────────────
+  fastify.get('/settings', { preHandler: [authenticate, requireAdmin] }, SettingsController.getAll);
+  fastify.patch('/settings', { preHandler: [authenticate, requireAdmin] }, SettingsController.update);
 
   // ── Facility Types (ADMIN only) ──────────────────────────────
   fastify.get('/facility-types', { preHandler: [authenticate, requireStaffOrAdmin] }, AdminController.listFacilityTypes);

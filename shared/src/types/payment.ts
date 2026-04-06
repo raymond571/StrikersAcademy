@@ -10,6 +10,8 @@ export interface Payment {
   razorpayOrderId: string | null;
   razorpayPaymentId: string | null;
   status: PaymentStatus;
+  cancellationCharge: number | null;
+  refundAmount: number | null;
   paidAt: string | null;
   refundedAt: string | null;
   createdAt: string;

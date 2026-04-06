@@ -6,6 +6,7 @@ import { Prisma, PrismaClient } from '@prisma/client';
 
 type TxClient = Prisma.TransactionClient;
 import { PaymentService } from './payment.service';
+import { SettingsService } from './settings.service';
 
 /** Throw an HTTP-aware error */
 function httpError(message: string, statusCode: number): never {
@@ -506,31 +507,39 @@ export const BookingService = {
       }
     }
 
+    // Get cancellation charge percentage
+    const chargePercent = await SettingsService.getCancellationChargePercent(prisma);
+
     // Cancel booking and process refund if applicable
     return prisma.$transaction(async (tx: TxClient) => {
-      // Check if refund is needed (paid online)
       const payment = booking!.payment;
       const needsRefund = payment && payment.status === 'SUCCESS' && payment.razorpayPaymentId;
       let refundIssued = false;
+      let cancellationCharge = 0;
+      let refundAmount = 0;
 
-      // Issue Razorpay refund before updating statuses
       if (needsRefund) {
+        // Calculate cancellation charge
+        cancellationCharge = Math.round(payment.amount * chargePercent / 100);
+        const refundableAmount = payment.amount - cancellationCharge;
+
         try {
-          // Check how much has already been refunded on this Razorpay payment
-          // (partial refunds may have been issued during reschedule)
           const rzpPayment = await PaymentService.fetchPayment(payment.razorpayPaymentId!);
           const alreadyRefunded = rzpPayment.amount_refunded ?? 0;
           const captured = rzpPayment.amount ?? 0;
           const remaining = captured - alreadyRefunded;
 
-          if (remaining > 0) {
-            await PaymentService.refund(payment.razorpayPaymentId!, remaining);
+          // Only refund refundable amount (after charge), capped at what Razorpay has remaining
+          const toRefund = Math.min(refundableAmount, remaining);
+
+          if (toRefund > 0) {
+            await PaymentService.refund(payment.razorpayPaymentId!, toRefund);
+            refundAmount = toRefund;
           }
           refundIssued = true;
         } catch (err: unknown) {
           const msg = (err as { error?: { description?: string } })?.error?.description
             || (err as Error)?.message || 'Razorpay refund failed';
-          // If already fully refunded, treat as success
           if (msg.toLowerCase().includes('fully refunded')) {
             refundIssued = true;
           } else {
@@ -540,7 +549,12 @@ export const BookingService = {
 
         await tx.payment.update({
           where: { id: payment.id },
-          data: { status: 'REFUNDED', refundedAt: new Date() },
+          data: {
+            status: 'REFUNDED',
+            refundedAt: new Date(),
+            cancellationCharge: cancellationCharge > 0 ? cancellationCharge : null,
+            refundAmount: refundAmount > 0 ? refundAmount : null,
+          },
         });
       }
 

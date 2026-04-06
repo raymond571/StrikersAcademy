@@ -161,6 +161,23 @@ export const bookingApi = {
     });
     return res.data.data.booking;
   },
+
+  async cancelPreview(id: string): Promise<{
+    bookingId: string;
+    amount: number;
+    chargePercent: number;
+    cancellationCharge: number;
+    refundAmount: number;
+    paymentMethod: string;
+    paymentStatus: string;
+  }> {
+    const res = await api.get<{ data: any }>(`/api/bookings/${id}/cancel-preview`);
+    return res.data.data;
+  },
+
+  invoiceUrl(id: string): string {
+    return `/api/bookings/${id}/invoice`;
+  },
 };
 
 // ── Payments ──────────────────────────────────────────────────
@@ -399,6 +416,16 @@ export const adminApi = {
 
   async deleteFacilityType(id: string): Promise<void> {
     await api.delete(`/api/admin/facility-types/${id}`);
+  },
+
+  async getSettings(): Promise<Record<string, string>> {
+    const res = await api.get<{ data: { settings: Record<string, string> } }>('/api/admin/settings');
+    return res.data.data.settings;
+  },
+
+  async updateSettings(data: Record<string, string>): Promise<Record<string, string>> {
+    const res = await api.patch<{ data: { settings: Record<string, string> } }>('/api/admin/settings', data);
+    return res.data.data.settings;
   },
 };
 

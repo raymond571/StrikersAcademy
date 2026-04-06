@@ -330,6 +330,58 @@ function groupBookings(bookings: Booking[]): BookingGroup[] {
   }));
 }
 
+function CancelConfirmModal({ bookingId, onConfirm, onClose }: {
+  bookingId: string;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  const [preview, setPreview] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    bookingApi.cancelPreview(bookingId)
+      .then(setPreview)
+      .catch(() => setPreview(null))
+      .finally(() => setLoading(false));
+  }, [bookingId]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
+        <h3 className="text-lg font-bold text-gray-900">Cancel Booking</h3>
+        {loading ? <p className="text-sm text-gray-500">Loading...</p> : preview ? (
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between"><span>Booking amount:</span><span className="font-medium">{formatPaise(preview.amount)}</span></div>
+            {preview.cancellationCharge > 0 && (
+              <div className="flex justify-between text-red-600">
+                <span>Cancellation charge ({preview.chargePercent}%):</span>
+                <span>- {formatPaise(preview.cancellationCharge)}</span>
+              </div>
+            )}
+            {preview.paymentStatus === 'SUCCESS' && (
+              <div className="flex justify-between font-medium border-t pt-2">
+                <span>Refund amount:</span>
+                <span className="text-green-600">{formatPaise(preview.refundAmount)}</span>
+              </div>
+            )}
+            {preview.paymentStatus !== 'SUCCESS' && (
+              <p className="text-xs text-gray-400">No refund — payment not completed</p>
+            )}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500">Cancel this booking?</p>
+        )}
+        <div className="flex gap-3">
+          <button onClick={onClose} className="btn-secondary flex-1">Keep Booking</button>
+          <button onClick={onConfirm} className="rounded bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700 flex-1">
+            Confirm Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BookingCard({ group, cancelling, onCancel, onCancelBatch, onUpdate }: {
   group: BookingGroup;
   cancelling: string | null;
@@ -338,51 +390,68 @@ function BookingCard({ group, cancelling, onCancel, onCancelBatch, onUpdate }: {
   onUpdate: (b: Booking) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [cancelTarget, setCancelTarget] = useState<string | null>(null);
   const isBatch = group.bookings.length > 1;
   const canAct = group.status === 'PENDING' || group.status === 'CONFIRMED';
+  const activeBookings = group.bookings.filter(b => b.status === 'PENDING' || b.status === 'CONFIRMED');
+
+  const handleInvoice = (bookingId: string) => {
+    window.open(bookingApi.invoiceUrl(bookingId), '_blank');
+  };
 
   if (!isBatch) {
-    // Single booking — render as before
     const booking = group.bookings[0];
     return (
-      <div className="card">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="font-medium text-gray-900">
-              {booking.slot?.facility?.name ?? 'Facility'}
-            </p>
-            <p className="text-sm text-gray-500">
-              {booking.slot?.date} &middot; {booking.slot?.startTime}–{booking.slot?.endTime}
-            </p>
-            <p className="text-xs text-gray-400 mt-1">
-              {booking.paymentMethod === 'ONLINE' ? 'Online' : 'Pay at venue'}
-              {booking.payment ? ` · ${formatPaise(booking.payment.amount)}` : ''}
-              {booking.payment?.status === 'SUCCESS' && ' · Paid'}
-              {booking.payment?.status === 'REFUNDED' && ' · Refunded'}
-            </p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <span className={`text-xs font-medium px-2 py-1 rounded-full ${STATUS_STYLES[booking.status] ?? 'bg-gray-100 text-gray-600'}`}>
-              {booking.status}
-            </span>
-            {canAct && (
-              <>
-                <button onClick={() => onUpdate(booking)} className="rounded bg-brand-600 px-3 py-1 text-xs text-white hover:bg-brand-700">Update</button>
-                <button onClick={() => onCancel(booking.id)} disabled={cancelling === booking.id} className="rounded bg-red-600 px-3 py-1 text-xs text-white hover:bg-red-700 disabled:opacity-50">
-                  {cancelling === booking.id ? 'Cancelling...' : 'Cancel'}
-                </button>
-              </>
-            )}
-            {booking.status === 'PENDING' && booking.paymentMethod === 'ONLINE' && (
-              <Link to={`/payment/${booking.id}${booking.batchId ? `?batchId=${booking.batchId}` : ''}`} className="rounded bg-brand-600 px-3 py-1 text-xs text-white hover:bg-brand-700">Pay</Link>
-            )}
+      <>
+        <div className="card">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="font-medium text-gray-900">
+                {booking.slot?.facility?.name ?? 'Facility'}
+              </p>
+              <p className="text-sm text-gray-500">
+                {booking.slot?.date} &middot; {booking.slot?.startTime}–{booking.slot?.endTime}
+              </p>
+              <p className="text-xs text-gray-400 mt-1">
+                {booking.paymentMethod === 'ONLINE' ? 'Online' : 'Pay at venue'}
+                {booking.payment ? ` · ${formatPaise(booking.payment.amount)}` : ''}
+                {booking.payment?.status === 'SUCCESS' && ' · Paid'}
+                {booking.payment?.status === 'REFUNDED' && ` · Refunded${booking.payment?.cancellationCharge ? ` (charge: ${formatPaise(booking.payment.cancellationCharge)})` : ''}`}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+              <span className={`text-xs font-medium px-2 py-1 rounded-full ${STATUS_STYLES[booking.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                {booking.status}
+              </span>
+              {(booking.status === 'CONFIRMED' || booking.status === 'REFUNDED') && (
+                <button onClick={() => handleInvoice(booking.id)} className="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-700">Invoice</button>
+              )}
+              {canAct && (
+                <>
+                  <button onClick={() => onUpdate(booking)} className="rounded bg-brand-600 px-2 py-1 text-xs text-white hover:bg-brand-700">Update</button>
+                  <button onClick={() => setCancelTarget(booking.id)} disabled={!!cancelling} className="rounded bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700 disabled:opacity-50">
+                    {cancelling === booking.id ? 'Cancelling...' : 'Cancel'}
+                  </button>
+                </>
+              )}
+              {booking.status === 'PENDING' && booking.paymentMethod === 'ONLINE' && (
+                <Link to={`/payment/${booking.id}${booking.batchId ? `?batchId=${booking.batchId}` : ''}`} className="rounded bg-brand-600 px-2 py-1 text-xs text-white hover:bg-brand-700">Pay</Link>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+        {cancelTarget && (
+          <CancelConfirmModal
+            bookingId={cancelTarget}
+            onClose={() => setCancelTarget(null)}
+            onConfirm={() => { onCancel(cancelTarget); setCancelTarget(null); }}
+          />
+        )}
+      </>
     );
   }
 
-  // Batch booking — collapsible card
+  // Batch booking
   const facilitySummary = Object.entries(
     group.bookings.reduce<Record<string, number>>((acc, b) => {
       const name = b.slot?.facility?.name ?? 'Unknown';
@@ -392,70 +461,94 @@ function BookingCard({ group, cancelling, onCancel, onCancelBatch, onUpdate }: {
   ).map(([name, count]) => `${name} (${count})`).join(', ');
 
   return (
-    <div className="card p-0 overflow-hidden">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex flex-wrap items-start justify-between gap-2 p-4 hover:bg-gray-50 transition-colors text-left"
-      >
-        <div className="min-w-0">
-          <p className="font-medium text-gray-900">
-            {group.bookings.length} Slots — {group.date}
-          </p>
-          <p className="text-sm text-gray-500">{facilitySummary}</p>
-          <p className="text-xs text-gray-400 mt-1">
-            {group.paymentMethod === 'ONLINE' ? 'Online' : 'Pay at venue'} · Total: {formatPaise(group.totalPrice)}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <span className={`text-xs font-medium px-2 py-1 rounded-full ${STATUS_STYLES[group.status] ?? 'bg-gray-100 text-gray-600'}`}>
-            {group.status}
-          </span>
-          <svg className={`w-5 h-5 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </div>
-      </button>
-
-      {expanded && (
-        <div className="border-t border-gray-100 px-4 pb-4">
-          <div className="space-y-2 pt-3">
-            {group.bookings.map((b) => (
-              <div key={b.id} className="flex items-center justify-between text-sm bg-gray-50 rounded-lg px-3 py-2">
-                <div>
-                  <span className="font-medium text-gray-900">{b.slot?.facility?.name}</span>
-                  <span className="text-gray-500 ml-2">{b.slot?.startTime}–{b.slot?.endTime}</span>
-                  <span className="text-gray-400 ml-2 text-xs">{formatPaise(b.payment?.amount ?? 0)}</span>
-                </div>
-                {canAct && (
-                  <button onClick={() => onUpdate(b)} className="text-xs text-brand-600 hover:underline">Update</button>
-                )}
-              </div>
-            ))}
+    <>
+      <div className="card p-0 overflow-hidden">
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="w-full flex flex-wrap items-start justify-between gap-2 p-4 hover:bg-gray-50 transition-colors text-left"
+        >
+          <div className="min-w-0">
+            <p className="font-medium text-gray-900">
+              {group.bookings.length} Slots — {group.date}
+            </p>
+            <p className="text-sm text-gray-500">{facilitySummary}</p>
+            <p className="text-xs text-gray-400 mt-1">
+              {group.paymentMethod === 'ONLINE' ? 'Online' : 'Pay at venue'} · Total: {formatPaise(group.totalPrice)}
+            </p>
           </div>
-
-          {/* Batch actions */}
-          <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100">
-            {canAct && (
-              <button
-                onClick={() => onCancelBatch(group.bookings.map(b => b.id))}
-                disabled={!!cancelling}
-                className="rounded bg-red-600 px-3 py-1 text-xs text-white hover:bg-red-700 disabled:opacity-50"
-              >
-                {cancelling ? 'Cancelling...' : `Cancel All ${group.bookings.length} Slots`}
-              </button>
-            )}
-            {group.status === 'PENDING' && group.paymentMethod === 'ONLINE' && (
-              <Link
-                to={`/payment/${group.bookings[0].id}?batchId=${group.batchId}`}
-                className="rounded bg-brand-600 px-3 py-1 text-xs text-white hover:bg-brand-700"
-              >
-                Pay {formatPaise(group.totalPrice)}
-              </Link>
-            )}
+          <div className="flex items-center gap-2 shrink-0">
+            <span className={`text-xs font-medium px-2 py-1 rounded-full ${STATUS_STYLES[group.status] ?? 'bg-gray-100 text-gray-600'}`}>
+              {group.status}
+            </span>
+            <svg className={`w-5 h-5 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
           </div>
-        </div>
+        </button>
+
+        {expanded && (
+          <div className="border-t border-gray-100 px-4 pb-4">
+            <div className="space-y-2 pt-3">
+              {group.bookings.map((b) => {
+                const bCanAct = b.status === 'PENDING' || b.status === 'CONFIRMED';
+                return (
+                  <div key={b.id} className="flex flex-wrap items-center justify-between text-sm bg-gray-50 rounded-lg px-3 py-2 gap-2">
+                    <div className="min-w-0">
+                      <span className="font-medium text-gray-900">{b.slot?.facility?.name}</span>
+                      <span className="text-gray-500 ml-2">{b.slot?.startTime}–{b.slot?.endTime}</span>
+                      <span className="text-gray-400 ml-2 text-xs">{formatPaise(b.payment?.amount ?? 0)}</span>
+                      {b.status !== group.status && (
+                        <span className={`ml-2 text-xs px-1.5 py-0.5 rounded ${STATUS_STYLES[b.status] ?? ''}`}>{b.status}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {bCanAct && (
+                        <>
+                          <button onClick={() => onUpdate(b)} className="text-xs text-brand-600 hover:underline">Update</button>
+                          <button onClick={() => setCancelTarget(b.id)} className="text-xs text-red-600 hover:underline">Cancel</button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-gray-100">
+              {(group.status === 'CONFIRMED' || group.status === 'REFUNDED') && (
+                <button onClick={() => handleInvoice(group.bookings[0].id)} className="rounded bg-gray-600 px-3 py-1 text-xs text-white hover:bg-gray-700">
+                  Download Invoice
+                </button>
+              )}
+              {activeBookings.length > 1 && (
+                <button
+                  onClick={() => onCancelBatch(activeBookings.map(b => b.id))}
+                  disabled={!!cancelling}
+                  className="rounded bg-red-600 px-3 py-1 text-xs text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  {cancelling ? 'Cancelling...' : `Cancel All ${activeBookings.length} Slots`}
+                </button>
+              )}
+              {group.status === 'PENDING' && group.paymentMethod === 'ONLINE' && (
+                <Link
+                  to={`/payment/${group.bookings[0].id}?batchId=${group.batchId}`}
+                  className="rounded bg-brand-600 px-3 py-1 text-xs text-white hover:bg-brand-700"
+                >
+                  Pay {formatPaise(group.totalPrice)}
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+      {cancelTarget && (
+        <CancelConfirmModal
+          bookingId={cancelTarget}
+          onClose={() => setCancelTarget(null)}
+          onConfirm={() => { onCancel(cancelTarget); setCancelTarget(null); }}
+        />
       )}
-    </div>
+    </>
   );
 }
 

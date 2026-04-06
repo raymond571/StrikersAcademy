@@ -7,6 +7,7 @@ import { SlotsTab } from '../components/admin/SlotsTab';
 import { FacilitiesTab } from '../components/admin/FacilitiesTab';
 import { ReportsTab } from '../components/admin/ReportsTab';
 import { CouponsTab } from '../components/admin/CouponsTab';
+import { SettingsTab } from '../components/admin/SettingsTab';
 
 const TABS = [
   { id: 'dashboard', label: 'Dashboard' },
@@ -16,6 +17,7 @@ const TABS = [
   { id: 'slots', label: 'Slots' },
   { id: 'reports', label: 'Reports' },
   { id: 'coupons', label: 'Coupons' },
+  { id: 'settings', label: 'Settings' },
 ] as const;
 
 export type AdminTabId = (typeof TABS)[number]['id'];
@@ -63,6 +65,7 @@ export default function AdminPage() {
         {activeTab === 'slots' && <SlotsTab />}
         {activeTab === 'reports' && <ReportsTab />}
         {activeTab === 'coupons' && <CouponsTab />}
+        {activeTab === 'settings' && <SettingsTab />}
       </div>
     </Layout>
   );
