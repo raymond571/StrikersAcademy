@@ -155,7 +155,7 @@ export const ReportService = {
     return { csv, filename: `bookings-${from}-to-${to}.csv` };
   },
 
-  /** Generate booking history PDF */
+  /** Generate visual booking history PDF with colored cards and styled table */
   async bookingHistoryPDF(prisma: PrismaClient, from: string, to: string): Promise<{ stream: PDFKit.PDFDocument; filename: string }> {
     const bookings = await prisma.booking.findMany({
       include: {
@@ -170,58 +170,134 @@ export const ReportService = {
     const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 40 });
     const filename = `bookings-${from}-to-${to}.pdf`;
 
+    // Compute stats
+    const totalAmount = bookings.reduce((s: number, b: any) => s + (b.payment?.amount || 0), 0);
+    const confirmed = bookings.filter((b: any) => b.status === 'CONFIRMED').length;
+    const pending = bookings.filter((b: any) => b.status === 'PENDING').length;
+    const cancelled = bookings.filter((b: any) => b.status === 'CANCELLED' || b.status === 'REFUNDED').length;
+    const onlineCount = bookings.filter((b: any) => b.paymentMethod === 'ONLINE').length;
+    const offlineCount = bookings.filter((b: any) => b.paymentMethod === 'OFFLINE').length;
+
+    const drawCard = (x: number, y: number, w: number, h: number, color: string, label: string, value: string) => {
+      doc.save();
+      doc.roundedRect(x, y, w, h, 5).fill(color);
+      doc.fillColor('#FFFFFF').fontSize(8).font('Helvetica').text(label, x + 8, y + 6, { width: w - 16 });
+      doc.fillColor('#FFFFFF').fontSize(16).font('Helvetica-Bold').text(value, x + 8, y + 22, { width: w - 16 });
+      doc.restore();
+      doc.fillColor('#000000');
+    };
+
+    const statusColor = (s: string) => {
+      if (s === 'CONFIRMED') return '#10B981';
+      if (s === 'PENDING') return '#F59E0B';
+      if (s === 'CANCELLED') return '#EF4444';
+      if (s === 'REFUNDED') return '#6B7280';
+      return '#6B7280';
+    };
+
     // Header
     doc.fontSize(16).font('Helvetica-Bold').text(settings.academy_name || 'StrikersAcademy', { align: 'center' });
-    doc.fontSize(10).font('Helvetica').text(`Booking History: ${from} to ${to}`, { align: 'center' });
-    doc.moveDown(0.5);
-    doc.text(`Total: ${bookings.length} bookings | Generated: ${new Date().toLocaleDateString('en-IN')}`, { align: 'center' });
-    doc.moveDown();
-    doc.moveTo(40, doc.y).lineTo(802, doc.y).stroke();
-    doc.moveDown(0.5);
-
-    // Table header
-    const cols = [40, 130, 230, 310, 380, 430, 500, 560, 640, 720];
-    doc.fontSize(7).font('Helvetica-Bold');
-    doc.text('Customer', cols[0], doc.y);
-    doc.text('Phone', cols[1], doc.y);
-    doc.text('Facility', cols[2], doc.y);
-    doc.text('Date', cols[3], doc.y);
-    doc.text('Time', cols[4], doc.y);
-    doc.text('Status', cols[5], doc.y);
-    doc.text('Payment', cols[6], doc.y);
-    doc.text('Pay Status', cols[7], doc.y);
-    doc.text('Amount', cols[8], doc.y);
-    doc.text('Razorpay ID', cols[9], doc.y);
+    doc.fontSize(9).font('Helvetica').text(settings.academy_address || '', { align: 'center' });
     doc.moveDown(0.3);
-    doc.moveTo(40, doc.y).lineTo(802, doc.y).stroke();
+    doc.fontSize(13).font('Helvetica-Bold').text('Booking History Report', { align: 'center' });
+    doc.fontSize(9).font('Helvetica').text(`Generated: ${new Date().toLocaleDateString('en-IN')}`, { align: 'center' });
+    doc.moveDown(1);
 
-    // Rows
-    doc.fontSize(7).font('Helvetica');
+    // Summary cards
+    const cw = 118;
+    const ch = 45;
+    const gap = 8;
+    let sy = doc.y;
+
+    drawCard(40, sy, cw, ch, '#6B7280', 'Total Bookings', String(bookings.length));
+    drawCard(40 + (cw + gap), sy, cw, ch, '#10B981', 'Confirmed', String(confirmed));
+    drawCard(40 + 2 * (cw + gap), sy, cw, ch, '#F59E0B', 'Pending', String(pending));
+    drawCard(40 + 3 * (cw + gap), sy, cw, ch, '#EF4444', 'Cancelled', String(cancelled));
+    drawCard(40 + 4 * (cw + gap), sy, cw, ch, '#3B82F6', 'Online', String(onlineCount));
+    drawCard(40 + 5 * (cw + gap), sy, cw, ch, '#8B5CF6', 'Total Amount', formatPaise(totalAmount));
+
+    doc.y = sy + ch + gap * 2;
+
+    // Table
+    const cols = [40, 130, 225, 305, 370, 430, 495, 560, 645, 725];
+    const colW = [85, 90, 75, 60, 55, 60, 60, 80, 75, 77];
+    const headers = ['Customer', 'Phone', 'Facility', 'Date', 'Time', 'Status', 'Method', 'Pay Status', 'Amount', 'Razorpay ID'];
+
+    // Table header row
+    const thY = doc.y;
+    doc.save();
+    doc.rect(40, thY, 762, 16).fill('#1F2937');
+    doc.restore();
+    doc.fontSize(7).font('Helvetica-Bold').fillColor('#FFFFFF');
+    headers.forEach((h, i) => doc.text(h, cols[i] + 3, thY + 4, { width: colW[i] }));
+    doc.fillColor('#000000');
+    doc.y = thY + 20;
+
+    // Table rows
+    let rowIdx = 0;
     for (const b of bookings as any[]) {
-      if (doc.y > 540) { doc.addPage(); }
-      const y = doc.y + 4;
-      doc.text((b.user?.name || '').slice(0, 15), cols[0], y, { width: 85 });
-      doc.text(b.user?.phone || '', cols[1], y, { width: 95 });
-      doc.text((b.slot?.facility?.name || '').slice(0, 12), cols[2], y, { width: 75 });
-      doc.text(b.slot?.date || '', cols[3], y, { width: 65 });
-      doc.text(`${b.slot?.startTime || ''}-${b.slot?.endTime || ''}`, cols[4], y, { width: 65 });
-      doc.text(b.status, cols[5], y, { width: 55 });
-      doc.text(b.paymentMethod, cols[6], y, { width: 55 });
-      doc.text(b.payment?.status || '', cols[7], y, { width: 55 });
-      doc.text(b.payment ? formatPaise(b.payment.amount) : '', cols[8], y, { width: 75 });
-      doc.text((b.payment?.razorpayPaymentId || '').slice(0, 18), cols[9], y, { width: 82 });
-      doc.moveDown(0.3);
+      if (doc.y > 530) {
+        doc.addPage();
+        // Repeat header on new page
+        const nhY = doc.y;
+        doc.save();
+        doc.rect(40, nhY, 762, 16).fill('#1F2937');
+        doc.restore();
+        doc.fontSize(7).font('Helvetica-Bold').fillColor('#FFFFFF');
+        headers.forEach((h, i) => doc.text(h, cols[i] + 3, nhY + 4, { width: colW[i] }));
+        doc.fillColor('#000000');
+        doc.y = nhY + 20;
+        rowIdx = 0;
+      }
+
+      const ry = doc.y;
+
+      // Alternating row background
+      if (rowIdx % 2 === 0) {
+        doc.save();
+        doc.rect(40, ry - 1, 762, 14).fill('#F9FAFB');
+        doc.restore();
+      }
+
+      doc.fontSize(7).font('Helvetica').fillColor('#374151');
+      doc.text((b.user?.name || '').slice(0, 14), cols[0] + 3, ry, { width: colW[0] });
+      doc.text(b.user?.phone || '', cols[1] + 3, ry, { width: colW[1] });
+      doc.text((b.slot?.facility?.name || '').slice(0, 12), cols[2] + 3, ry, { width: colW[2] });
+      doc.text(b.slot?.date || '', cols[3] + 3, ry, { width: colW[3] });
+      doc.text(`${b.slot?.startTime || ''}-${b.slot?.endTime || ''}`, cols[4] + 3, ry, { width: colW[4] });
+
+      // Status with color
+      doc.fillColor(statusColor(b.status)).font('Helvetica-Bold');
+      doc.text(b.status, cols[5] + 3, ry, { width: colW[5] });
+
+      doc.fillColor('#374151').font('Helvetica');
+      doc.text(b.paymentMethod === 'ONLINE' ? 'Online' : 'Offline', cols[6] + 3, ry, { width: colW[6] });
+
+      // Payment status color
+      const pStatus = b.payment?.status || '';
+      doc.fillColor(pStatus === 'SUCCESS' ? '#10B981' : pStatus === 'REFUNDED' ? '#EF4444' : '#F59E0B');
+      doc.text(pStatus, cols[7] + 3, ry, { width: colW[7] });
+
+      doc.fillColor('#374151').font('Helvetica');
+      doc.text(b.payment ? formatPaise(b.payment.amount) : '', cols[8] + 3, ry, { width: colW[8] });
+      doc.fontSize(6).text((b.payment?.razorpayPaymentId || '—').slice(0, 18), cols[9] + 3, ry, { width: colW[9] });
+
+      doc.y = ry + 14;
+      rowIdx++;
     }
 
-    // Summary
-    doc.moveDown();
-    doc.moveTo(40, doc.y).lineTo(802, doc.y).stroke();
+    // Bottom summary bar
     doc.moveDown(0.5);
-    const total = bookings.reduce((s: number, b: any) => s + (b.payment?.amount || 0), 0);
-    const confirmed = bookings.filter((b: any) => b.status === 'CONFIRMED').length;
-    const cancelled = bookings.filter((b: any) => b.status === 'CANCELLED' || b.status === 'REFUNDED').length;
-    doc.fontSize(9).font('Helvetica-Bold');
-    doc.text(`Total: ${bookings.length} bookings | Confirmed: ${confirmed} | Cancelled/Refunded: ${cancelled} | Total Amount: ${formatPaise(total)}`, 40);
+    const sumY = doc.y;
+    doc.save();
+    doc.rect(40, sumY, 762, 20).fill('#1F2937');
+    doc.restore();
+    doc.fontSize(9).font('Helvetica-Bold').fillColor('#FFFFFF');
+    doc.text(`Total: ${bookings.length} bookings  |  Confirmed: ${confirmed}  |  Pending: ${pending}  |  Cancelled: ${cancelled}  |  Online: ${onlineCount}  |  Offline: ${offlineCount}  |  Amount: ${formatPaise(totalAmount)}`, 50, sumY + 5);
+
+    // Footer
+    doc.fillColor('#9CA3AF').fontSize(7).font('Helvetica');
+    doc.text(`${settings.academy_name} — Booking History Report`, 40, 555, { align: 'center' });
 
     doc.end();
     return { stream: doc, filename };
