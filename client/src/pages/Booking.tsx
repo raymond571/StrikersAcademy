@@ -30,6 +30,7 @@ export default function BookingPage() {
   const [isBooking, setIsBooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSummary, setShowSummary] = useState(false);
+  const [expandedFacilities, setExpandedFacilities] = useState<Record<string, boolean>>({});
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -155,46 +156,62 @@ export default function BookingPage() {
               const slots = facilitySlots[f.id] || [];
               const loading = loadingSlots[f.id];
               const facilityCartCount = cart.filter((c) => c.facilityId === f.id).length;
+              const isExpanded = expandedFacilities[f.id] || false;
 
               return (
-                <div key={f.id} className="card">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
+                <div key={f.id} className="card p-0 overflow-hidden">
+                  <button
+                    onClick={() => setExpandedFacilities((prev) => ({ ...prev, [f.id]: !prev[f.id] }))}
+                    className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="text-left">
                       <h3 className="font-semibold text-gray-900">{f.name}</h3>
                       <p className="text-xs text-gray-500">{f.type} &middot; {formatPaise(f.pricePerSlot)}/slot</p>
                     </div>
-                    {facilityCartCount > 0 && (
-                      <span className="rounded-full bg-brand-100 text-brand-700 px-2 py-0.5 text-xs font-medium">
-                        {facilityCartCount} selected
-                      </span>
-                    )}
-                  </div>
+                    <div className="flex items-center gap-2">
+                      {facilityCartCount > 0 && (
+                        <span className="rounded-full bg-brand-100 text-brand-700 px-2 py-0.5 text-xs font-medium">
+                          {facilityCartCount} selected
+                        </span>
+                      )}
+                      <svg
+                        className={`w-5 h-5 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                        fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </button>
 
-                  {loading ? (
-                    <p className="text-sm text-gray-500">Loading...</p>
-                  ) : slots.length === 0 ? (
-                    <p className="text-sm text-gray-400">No slots for this date</p>
-                  ) : (
-                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
-                      {slots.map((slot) => {
-                        const inCart = isInCart(slot.id);
-                        return (
-                          <button
-                            key={slot.id}
-                            disabled={!slot.isAvailable && !inCart}
-                            onClick={() => toggleSlot(f, slot)}
-                            className={`rounded border px-1.5 py-1.5 text-xs transition-colors ${
-                              inCart
-                                ? 'border-brand-500 bg-brand-500 text-white font-medium'
-                                : !slot.isAvailable
-                                ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed'
-                                : 'border-gray-200 hover:border-brand-300 text-gray-700'
-                            }`}
-                          >
-                            {slot.startTime}
-                          </button>
-                        );
-                      })}
+                  {isExpanded && (
+                    <div className="px-4 pb-4 border-t border-gray-100">
+                      {loading ? (
+                        <p className="text-sm text-gray-500 pt-3">Loading...</p>
+                      ) : slots.length === 0 ? (
+                        <p className="text-sm text-gray-400 pt-3">No slots for this date</p>
+                      ) : (
+                        <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5 pt-3">
+                          {slots.map((slot) => {
+                            const inCart = isInCart(slot.id);
+                            return (
+                              <button
+                                key={slot.id}
+                                disabled={!slot.isAvailable && !inCart}
+                                onClick={() => toggleSlot(f, slot)}
+                                className={`rounded border px-1.5 py-1.5 text-xs transition-colors ${
+                                  inCart
+                                    ? 'border-brand-500 bg-brand-500 text-white font-medium'
+                                    : !slot.isAvailable
+                                    ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed'
+                                    : 'border-gray-200 hover:border-brand-300 text-gray-700'
+                                }`}
+                              >
+                                {slot.startTime}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

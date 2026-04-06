@@ -295,6 +295,170 @@ function UpdateSlotModal({ booking, onClose, onUpdated }: {
   );
 }
 
+interface BookingGroup {
+  key: string;
+  batchId: string | null;
+  bookings: Booking[];
+  totalPrice: number;
+  status: string;
+  date: string;
+  paymentMethod: string;
+}
+
+function groupBookings(bookings: Booking[]): BookingGroup[] {
+  const groups: Record<string, Booking[]> = {};
+
+  for (const b of bookings) {
+    const key = b.batchId || b.id; // solo bookings use their own id
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(b);
+  }
+
+  return Object.entries(groups).map(([key, items]) => ({
+    key,
+    batchId: items[0].batchId,
+    bookings: items.sort((a, b) => {
+      const fA = a.slot?.facility?.name ?? '';
+      const fB = b.slot?.facility?.name ?? '';
+      if (fA !== fB) return fA.localeCompare(fB);
+      return (a.slot?.startTime ?? '').localeCompare(b.slot?.startTime ?? '');
+    }),
+    totalPrice: items.reduce((sum, b) => sum + (b.payment?.amount ?? 0), 0),
+    status: items[0].status,
+    date: items[0].slot?.date ?? '',
+    paymentMethod: items[0].paymentMethod,
+  }));
+}
+
+function BookingCard({ group, cancelling, onCancel, onCancelBatch, onUpdate }: {
+  group: BookingGroup;
+  cancelling: string | null;
+  onCancel: (id: string) => void;
+  onCancelBatch: (ids: string[]) => void;
+  onUpdate: (b: Booking) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const isBatch = group.bookings.length > 1;
+  const canAct = group.status === 'PENDING' || group.status === 'CONFIRMED';
+
+  if (!isBatch) {
+    // Single booking — render as before
+    const booking = group.bookings[0];
+    return (
+      <div className="card">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="font-medium text-gray-900">
+              {booking.slot?.facility?.name ?? 'Facility'}
+            </p>
+            <p className="text-sm text-gray-500">
+              {booking.slot?.date} &middot; {booking.slot?.startTime}–{booking.slot?.endTime}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              {booking.paymentMethod === 'ONLINE' ? 'Online' : 'Pay at venue'}
+              {booking.payment ? ` · ${formatPaise(booking.payment.amount)}` : ''}
+              {booking.payment?.status === 'SUCCESS' && ' · Paid'}
+              {booking.payment?.status === 'REFUNDED' && ' · Refunded'}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className={`text-xs font-medium px-2 py-1 rounded-full ${STATUS_STYLES[booking.status] ?? 'bg-gray-100 text-gray-600'}`}>
+              {booking.status}
+            </span>
+            {canAct && (
+              <>
+                <button onClick={() => onUpdate(booking)} className="rounded bg-brand-600 px-3 py-1 text-xs text-white hover:bg-brand-700">Update</button>
+                <button onClick={() => onCancel(booking.id)} disabled={cancelling === booking.id} className="rounded bg-red-600 px-3 py-1 text-xs text-white hover:bg-red-700 disabled:opacity-50">
+                  {cancelling === booking.id ? 'Cancelling...' : 'Cancel'}
+                </button>
+              </>
+            )}
+            {booking.status === 'PENDING' && booking.paymentMethod === 'ONLINE' && (
+              <Link to={`/payment/${booking.id}${booking.batchId ? `?batchId=${booking.batchId}` : ''}`} className="rounded bg-brand-600 px-3 py-1 text-xs text-white hover:bg-brand-700">Pay</Link>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Batch booking — collapsible card
+  const facilitySummary = Object.entries(
+    group.bookings.reduce<Record<string, number>>((acc, b) => {
+      const name = b.slot?.facility?.name ?? 'Unknown';
+      acc[name] = (acc[name] || 0) + 1;
+      return acc;
+    }, {})
+  ).map(([name, count]) => `${name} (${count})`).join(', ');
+
+  return (
+    <div className="card p-0 overflow-hidden">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex flex-wrap items-start justify-between gap-2 p-4 hover:bg-gray-50 transition-colors text-left"
+      >
+        <div className="min-w-0">
+          <p className="font-medium text-gray-900">
+            {group.bookings.length} Slots — {group.date}
+          </p>
+          <p className="text-sm text-gray-500">{facilitySummary}</p>
+          <p className="text-xs text-gray-400 mt-1">
+            {group.paymentMethod === 'ONLINE' ? 'Online' : 'Pay at venue'} · Total: {formatPaise(group.totalPrice)}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className={`text-xs font-medium px-2 py-1 rounded-full ${STATUS_STYLES[group.status] ?? 'bg-gray-100 text-gray-600'}`}>
+            {group.status}
+          </span>
+          <svg className={`w-5 h-5 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-gray-100 px-4 pb-4">
+          <div className="space-y-2 pt-3">
+            {group.bookings.map((b) => (
+              <div key={b.id} className="flex items-center justify-between text-sm bg-gray-50 rounded-lg px-3 py-2">
+                <div>
+                  <span className="font-medium text-gray-900">{b.slot?.facility?.name}</span>
+                  <span className="text-gray-500 ml-2">{b.slot?.startTime}–{b.slot?.endTime}</span>
+                  <span className="text-gray-400 ml-2 text-xs">{formatPaise(b.payment?.amount ?? 0)}</span>
+                </div>
+                {canAct && (
+                  <button onClick={() => onUpdate(b)} className="text-xs text-brand-600 hover:underline">Update</button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Batch actions */}
+          <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100">
+            {canAct && (
+              <button
+                onClick={() => onCancelBatch(group.bookings.map(b => b.id))}
+                disabled={!!cancelling}
+                className="rounded bg-red-600 px-3 py-1 text-xs text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {cancelling ? 'Cancelling...' : `Cancel All ${group.bookings.length} Slots`}
+              </button>
+            )}
+            {group.status === 'PENDING' && group.paymentMethod === 'ONLINE' && (
+              <Link
+                to={`/payment/${group.bookings[0].id}?batchId=${group.batchId}`}
+                className="rounded bg-brand-600 px-3 py-1 text-xs text-white hover:bg-brand-700"
+              >
+                Pay {formatPaise(group.totalPrice)}
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 type StatusFilter = 'ALL' | 'CONFIRMED' | 'PENDING' | 'CANCELLED';
 
 export default function DashboardPage() {
@@ -306,7 +470,6 @@ export default function DashboardPage() {
   const [updatingBooking, setUpdatingBooking] = useState<Booking | null>(null);
 
   const handleCancel = async (bookingId: string) => {
-    if (!confirm('Cancel this booking? If paid online, a refund will be issued.')) return;
     setCancelling(bookingId);
     setCancelError(null);
     try {
@@ -319,7 +482,21 @@ export default function DashboardPage() {
     }
   };
 
-  const canCancel = (status: string) => status === 'PENDING' || status === 'CONFIRMED';
+  const handleCancelBatch = async (bookingIds: string[]) => {
+    if (!confirm(`Cancel ${bookingIds.length > 1 ? `all ${bookingIds.length} slots` : 'this booking'}? If paid online, a refund will be issued.`)) return;
+    setCancelError(null);
+    setCancelling(bookingIds[0]);
+    try {
+      for (const id of bookingIds) {
+        await bookingApi.cancel(id);
+      }
+      refetch();
+    } catch (err) {
+      setCancelError(err instanceof Error ? err.message : 'Cancel failed');
+    } finally {
+      setCancelling(null);
+    }
+  };
 
   const filteredBookings = filter === 'ALL'
     ? bookings
@@ -407,55 +584,15 @@ export default function DashboardPage() {
           )}
           {!isLoading && filteredBookings.length > 0 && (
             <div className="space-y-3">
-              {filteredBookings.map((booking) => (
-                <div key={booking.id} className="card">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="font-medium text-gray-900">
-                        {booking.slot?.facility?.name ?? 'Facility'}
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        {booking.slot?.date} &middot; {booking.slot?.startTime}–{booking.slot?.endTime}
-                      </p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        {booking.paymentMethod === 'ONLINE' ? 'Online payment' : 'Pay at venue'}
-                        {booking.payment ? ` · ${formatPaise(booking.payment.amount)}` : ''}
-                        {booking.payment?.status === 'SUCCESS' && ' · Paid'}
-                        {booking.payment?.status === 'REFUNDED' && ' · Refunded'}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className={`text-xs font-medium px-2 py-1 rounded-full ${STATUS_STYLES[booking.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                        {booking.status}
-                      </span>
-                      {canCancel(booking.status) && (
-                        <>
-                          <button
-                            onClick={() => setUpdatingBooking(booking)}
-                            className="rounded bg-brand-600 px-3 py-1 text-xs text-white hover:bg-brand-700"
-                          >
-                            Update
-                          </button>
-                          <button
-                            onClick={() => handleCancel(booking.id)}
-                            disabled={cancelling === booking.id}
-                            className="rounded bg-red-600 px-3 py-1 text-xs text-white hover:bg-red-700 disabled:opacity-50"
-                          >
-                            {cancelling === booking.id ? 'Cancelling...' : 'Cancel'}
-                          </button>
-                        </>
-                      )}
-                      {booking.status === 'PENDING' && booking.paymentMethod === 'ONLINE' && (
-                        <Link
-                          to={`/payment/${booking.id}`}
-                          className="rounded bg-brand-600 px-3 py-1 text-xs text-white hover:bg-brand-700"
-                        >
-                          Pay
-                        </Link>
-                      )}
-                    </div>
-                  </div>
-                </div>
+              {groupBookings(filteredBookings).map((group) => (
+                <BookingCard
+                  key={group.key}
+                  group={group}
+                  cancelling={cancelling}
+                  onCancel={handleCancel}
+                  onCancelBatch={handleCancelBatch}
+                  onUpdate={setUpdatingBooking}
+                />
               ))}
             </div>
           )}
