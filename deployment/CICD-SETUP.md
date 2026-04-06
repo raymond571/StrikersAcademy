@@ -12,13 +12,34 @@ Complete step-by-step guide to connect GitHub Actions, Hetzner VPS, and Cloudfla
 
 ---
 
+## Security: Public Repo + Secrets
+
+The GitHub repo is **public**. This is fine because:
+
+1. **GitHub Secrets are encrypted** — they are never exposed in logs, PRs, or forks. Only the workflows you write can access them, and they're masked in output.
+2. **`.env` files are gitignored** — credentials are never committed to the repo.
+3. **The deploy workflow uses SSH** — the VPS credentials (SSH key) are in GitHub Secrets, not in code.
+4. **Razorpay live keys, DB passwords, JWT secrets** — all stored in GitHub Environment Secrets, never in source.
+
+**What to NEVER do:**
+- Never commit `.env` files (already in `.gitignore`)
+- Never hardcode production credentials in source code
+- Never paste secrets in PR descriptions or commit messages
+- Never use `echo $SECRET` in workflow scripts (GitHub auto-masks, but avoid it)
+
+**If you want extra security:** Make the repo **private** at Settings → General → Danger Zone → Change visibility. GitHub Actions works the same way for private repos.
+
+---
+
 ## Step 1: Generate SSH Deploy Key
 
-On your local machine:
+On your local machine (Windows — don't use `-N ""`, leave passphrase empty when prompted):
 
 ```bash
-ssh-keygen -t ed25519 -C "github-actions-deploy" -f github_deploy_key -N ""
+ssh-keygen -t ed25519 -C "github-actions-deploy" -f github_deploy_key
 ```
+
+When asked `Enter passphrase` — press **Enter** twice (empty passphrase).
 
 This creates:
 - `github_deploy_key` — private key (goes to GitHub)
@@ -33,7 +54,13 @@ This creates:
 ```bash
 ssh root@<YOUR_VPS_IP>
 
-# Add key for deploy user
+# If deploy user doesn't exist, create it first:
+adduser --disabled-password --gecos "Deploy User" deploy
+usermod -aG sudo deploy
+echo "deploy ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/deploy
+chmod 440 /etc/sudoers.d/deploy
+
+# Add SSH key for deploy user
 mkdir -p /home/deploy/.ssh
 echo "<paste contents of github_deploy_key.pub>" >> /home/deploy/.ssh/authorized_keys
 chmod 700 /home/deploy/.ssh
@@ -58,7 +85,7 @@ Click **New repository secret** for each:
 
 | Secret | Value |
 |--------|-------|
-| `VPS_HOST` | Your Hetzner VPS IP (e.g. `5.78.xxx.xxx`) |
+| `VPS_HOST` | Your Hetzner VPS IPv4 (e.g. `46.62.236.207`) |
 | `VPS_USER` | `deploy` |
 | `VPS_SSH_KEY` | Entire contents of `github_deploy_key` file (private key, including `-----BEGIN/END-----` lines) |
 
@@ -115,12 +142,20 @@ Same page: https://github.com/raymond571/StrikersAcademy/settings/environments
 
 ### 6a. DNS Records
 
-Cloudflare Dashboard → DNS → Records:
+Cloudflare Dashboard → DNS → Records.
+
+**IMPORTANT:** Delete any old/stale A records (e.g. from GoDaddy). You should have ONLY:
 
 | Type | Name | Content | Proxy |
 |------|------|---------|-------|
-| A | `@` | `YOUR_VPS_IP` | Proxied (orange cloud) |
-| A | `www` | `YOUR_VPS_IP` | Proxied (orange cloud) |
+| A | `@` | `YOUR_VPS_IPV4` | Proxied (orange cloud) |
+| CNAME | `www` | `strickersacademy.in` | Proxied (orange cloud) |
+
+Optionally add IPv6:
+
+| Type | Name | Content | Proxy |
+|------|------|---------|-------|
+| AAAA | `@` | `YOUR_VPS_IPV6` | Proxied (orange cloud) |
 
 ### 6b. SSL Mode
 
@@ -149,7 +184,13 @@ sudo chmod 644 /etc/ssl/cloudflare/origin.pem
 sudo chmod 600 /etc/ssl/cloudflare/origin-key.pem
 ```
 
-### 6d. Edge Settings
+### 6d. Authenticated Origin Pulls
+
+Cloudflare → SSL/TLS → Origin Server → **Authenticated Origin Pulls → ON**
+
+This is REQUIRED — Nginx is configured to verify Cloudflare's client certificate. Without this toggle, you'll get `400 No required SSL certificate was sent`.
+
+### 6e. Edge Settings
 
 Cloudflare → SSL/TLS → Edge Certificates:
 - Always Use HTTPS: **ON**
@@ -162,124 +203,260 @@ Cloudflare → SSL/TLS → Edge Certificates:
 
 ## Step 7: First-time VPS Setup
 
-If you haven't run the full VPS setup yet:
-
 ```bash
 ssh root@<YOUR_VPS_IP>
 
 # Clone the repo
 git clone https://github.com/raymond571/StrikersAcademy.git /var/www/strickersacademy
 
-# Run the automated setup (installs Node, PostgreSQL, Nginx, PM2, backup cron, etc.)
+# Mark as safe directory (needed when running as root on deploy-owned repo)
+git config --global --add safe.directory /var/www/strickersacademy
+
+# Run the automated setup
 cd /var/www/strickersacademy
 bash deployment/setup-vps.sh
 ```
 
-After setup completes:
-- Note down the **DB password** it shows (or the one you entered)
-- Paste Cloudflare origin certs (Step 6c above)
-- Then reload Nginx:
+### After setup-vps.sh completes:
+
+The script handles steps 1-18 automatically. Then do these manual steps:
 
 ```bash
+# 1. Clean node_modules and reinstall (avoids tar errors)
+cd /var/www/strickersacademy
+rm -rf node_modules server/node_modules client/node_modules shared/node_modules
+npm ci
+
+# 2. Swap Prisma to PostgreSQL and push schema
+sed -i 's/provider = "sqlite"/provider = "postgresql"/' server/prisma/schema.prisma
+cd server
+rm -rf prisma/migrations  # Remove SQLite migrations
+npx prisma db push         # Create tables directly
+npx prisma generate        # Generate client for PostgreSQL
+cd ..
+
+# 3. Seed the database
+cd server
+export $(grep -v '^#' .env | xargs)
+npx tsx prisma/seed.ts
+cd ..
+
+# 4. Build everything
+npm run build --workspace=shared
+npm run build --workspace=server
+npm run build --workspace=client
+
+# 5. Start PM2
+pm2 delete strikers-api 2>/dev/null
+pm2 start deployment/ecosystem.config.js
+pm2 save
+pm2 startup systemd
+
+# 6. Reload Nginx (after pasting Cloudflare certs in Step 6c)
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-**Status:** [ ] Done
-
----
-
-## Step 8: Test the Pipeline
-
-### Test CI:
-Push any change to `master` — check the **Actions** tab on GitHub. The CI workflow should run tests.
-
-### Test Deploy:
-After CI passes, the Deploy workflow triggers automatically:
-- Go to: https://github.com/raymond571/StrikersAcademy/actions
-- Watch the "Deploy" workflow
-- It will SSH into VPS, write `.env`, build, and restart PM2
-
-### Manual Deploy:
-- Go to Actions → Deploy → **Run workflow** → select environment → click **Run**
-
-### Verify on VPS:
+### Verify:
 ```bash
-ssh deploy@<YOUR_VPS_IP>
-pm2 logs strikers-api --lines 20
 curl http://localhost:5000/api/auth/me
+# Should return: {"success":false,"error":"Unauthorised — please log in","statusCode":401}
 ```
 
-### Verify in browser:
-- Open https://strickersacademy.in
-- Should see the StrikersAcademy landing page
+Then visit `https://strickersacademy.in` in browser.
+
+**Seed data credentials:**
+
+| Role | Phone | Password |
+|------|-------|----------|
+| Admin | `9000000001` | `admin123` |
+| Staff | `9000000002` | `staff123` |
+| Customer | `9876543210` | `test123` |
 
 **Status:** [ ] Done
 
 ---
 
-## How It Works
+## Step 8: CI/CD — How It Works
+
+### Automatic Deployment
+
+Once Steps 1-7 are complete, CI/CD is automatic:
+
+1. **Push to `master`** → CI runs tests → deploys to **production** environment
+2. **Push to `develop`** → CI runs tests → deploys to **development** environment
+3. **Pull requests** → CI runs tests only (no deploy)
+
+### Manual Deployment
+
+Go to: https://github.com/raymond571/StrikersAcademy/actions → **Deploy** → **Run workflow** → pick environment → **Run**
+
+### What the Pipeline Does
 
 ```
-Developer pushes to master
-        |
-        v
-GitHub Actions CI (runs tests)
-        |
-        v (if tests pass)
-GitHub Actions Deploy
-        |
-        v
-SSH into Hetzner VPS
-        |
-        v
-1. git pull latest code
-2. Write .env from GitHub Secrets
-3. Swap Prisma to PostgreSQL
-4. npm ci → build shared → build server → build client
-5. Run Prisma migrations
-6. Restart PM2
-7. Reload Nginx
-        |
-        v
-Cloudflare (SSL/CDN) → Nginx (reverse proxy) → PM2/Fastify (:5000) → PostgreSQL
-        |
-        v
-User sees https://strickersacademy.in
+Push to master
+    │
+    ▼
+CI Workflow (.github/workflows/ci.yml)
+    ├── npm ci
+    ├── Build shared types
+    ├── Generate Prisma client
+    └── Run server tests (95 tests)
+    │
+    ▼ (if tests pass)
+Deploy Workflow (.github/workflows/deploy.yml)
+    ├── SSH into VPS
+    ├── git fetch + reset --hard
+    ├── Write server/.env from GitHub Secrets
+    ├── Write client/.env (VITE_ build vars)
+    └── Run deploy.sh --skip-pull
+         ├── Swap Prisma provider to postgresql
+         ├── npm ci --omit=dev
+         ├── prisma generate + migrate deploy
+         ├── Build shared → server → client
+         ├── PM2 restart
+         └── Nginx reload
 ```
+
+### Testing CI/CD
+
+After setting up GitHub Secrets (Steps 3-5):
+
+```bash
+# Make a small change and push
+cd /path/to/StrikersAcademy
+echo "" >> README.md
+git add README.md
+git commit -m "test: trigger CI/CD pipeline"
+git push origin master
+```
+
+Then watch: https://github.com/raymond571/StrikersAcademy/actions
+
+**Status:** [ ] Done
 
 ---
 
-## Branch Strategy
+## Architecture
 
-| Branch | Environment | Trigger | Razorpay |
-|--------|-------------|---------|----------|
-| `master` | production | Auto on push | Live keys |
-| `develop` | development | Auto on push | Test keys |
-| Any branch | — | CI only (no deploy) | — |
+```
+User Browser
+    │
+    ▼
+Cloudflare (DNS + SSL + CDN + Auth Origin Pull)
+    │
+    ▼
+Nginx (port 443, reverse proxy, serves static files)
+    ├── /api/* → proxy to localhost:5000 (Fastify)
+    └── /* → serve /client/dist/ (React SPA)
+    │
+    ▼
+PM2 → Fastify (port 5000, localhost only)
+    │
+    ▼
+PostgreSQL (port 5432, localhost only)
+```
 
 ---
 
 ## Troubleshooting
+
+### `npm ci` fails with TAR_ENTRY_ERROR / ENOTEMPTY
+
+Stale `node_modules`. Delete and retry:
+```bash
+cd /var/www/strickersacademy
+rm -rf node_modules server/node_modules client/node_modules shared/node_modules
+npm ci
+```
+
+### Prisma migration_lock.toml mismatch (sqlite vs postgresql)
+
+When switching from SQLite to PostgreSQL:
+```bash
+cd /var/www/strickersacademy/server
+rm -rf prisma/migrations
+npx prisma db push
+npx prisma generate
+```
+
+### Prisma "Environment variable not found: DATABASE_URL"
+
+When running seed or prisma commands outside PM2:
+```bash
+cd /var/www/strickersacademy/server
+export $(grep -v '^#' .env | xargs)
+npx tsx prisma/seed.ts
+```
+
+### PM2 "Script not found: dist/index.js"
+
+The TypeScript compiler outputs to `dist/server/src/` (not `dist/`). This is already fixed in `ecosystem.config.js`. If it happens:
+```bash
+find server/dist/ -name "index.js"
+# Then update ecosystem.config.js script path to match
+```
+
+### Prisma client not initialized after git reset
+
+`git reset --hard` reverts schema to sqlite. Re-swap and regenerate:
+```bash
+sed -i 's/provider = "sqlite"/provider = "postgresql"/' server/prisma/schema.prisma
+npx prisma generate --schema=server/prisma/schema.prisma
+pm2 restart strikers-api
+```
+
+### `400 No required SSL certificate was sent`
+
+Cloudflare Authenticated Origin Pulls is not enabled:
+- Cloudflare → SSL/TLS → Origin Server → **Authenticated Origin Pulls → ON**
+
+To test locally on VPS (bypassing client cert requirement):
+```bash
+# This will show the 400 error — that's expected
+curl -k https://localhost/
+# Use this instead to test the API directly:
+curl http://localhost:5000/api/auth/me
+```
+
+### DNS pointing to wrong IP / old GoDaddy records
+
+Delete all A records in Cloudflare except your Hetzner VPS IP. Check:
+```bash
+curl -4 -s ifconfig.me   # Get VPS IPv4
+```
+Ensure only that IP is in the A record.
 
 ### Deploy fails with SSH error
 - Verify `VPS_SSH_KEY` contains the full private key (including `-----BEGIN/END-----`)
 - Test SSH locally: `ssh -i github_deploy_key deploy@<VPS_IP>`
 - Check VPS firewall: `sudo ufw status` (port 22 must be open)
 
-### Deploy fails with permission error
-- The `deploy` user needs sudo access: `sudo cat /etc/sudoers.d/deploy`
-- The `.env` file permissions: `ls -la /var/www/strickersacademy/server/.env`
+### Deploy fails with "dubious ownership"
+```bash
+git config --global --add safe.directory /var/www/strickersacademy
+```
+
+### TypeScript build errors on VPS but not locally
+The VPS may have a different Node/TypeScript version. All `$transaction` callbacks need explicit types:
+```typescript
+prisma.$transaction(async (tx: TxClient) => { ... })
+```
+All `.map()`, `.some()`, `.reduce()` callbacks need explicit parameter types when `strict: true`.
 
 ### Site shows 502 Bad Gateway
-- Check PM2: `pm2 status` and `pm2 logs strikers-api`
-- Check if port 5000 is listening: `ss -tlnp | grep 5000`
-- Check Nginx config: `sudo nginx -t`
+```bash
+pm2 status                         # Check if process is running
+pm2 logs strikers-api --lines 30   # Check error logs
+ss -tlnp | grep 5000              # Check if port is listening
+```
 
 ### Razorpay payments fail in production
 - Ensure `RAZORPAY_KEY_ID` starts with `rzp_live_` (not `rzp_test_`)
-- Ensure webhook URL is registered in Razorpay dashboard: `https://strickersacademy.in/api/payments/webhook`
+- Register webhook URL in Razorpay dashboard: `https://strickersacademy.in/api/payments/webhook`
 
 ### Database migration fails
-- Check PostgreSQL is running: `sudo systemctl status postgresql`
-- Check DATABASE_URL in `.env`: `cat /var/www/strickersacademy/server/.env | grep DATABASE`
-- Try manual migration: `cd /var/www/strickersacademy/server && npx prisma migrate deploy`
+```bash
+sudo systemctl status postgresql              # Check PostgreSQL is running
+cat /var/www/strickersacademy/server/.env | grep DATABASE  # Check URL
+cd /var/www/strickersacademy/server && npx prisma migrate deploy  # Manual migration
+```
