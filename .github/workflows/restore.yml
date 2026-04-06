@@ -3,8 +3,6 @@ name: Database Restore
 on:
   push:
     branches: [master]
-    paths:
-      - 'deployment/restore-db.sh'
   workflow_dispatch:
     inputs:
       backup_file:
