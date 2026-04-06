@@ -10,7 +10,7 @@ export interface RegisterInput {
   name: string;
   email: string;
   phone: string;
-  age: number;
+  dateOfBirth: string; // YYYY-MM-DD
   password: string;
 }
 
@@ -25,8 +25,21 @@ export interface SafeUser {
   email: string;
   phone: string;
   age: number;
+  dateOfBirth: string | null;
   role: UserRole;
   createdAt: Date;
+}
+
+/** Calculate age from date of birth */
+function calculateAge(dob: string): number {
+  const birth = new Date(dob);
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const monthDiff = today.getMonth() - birth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+    age--;
+  }
+  return age;
 }
 
 /** Strip password from user record before returning to client */
@@ -36,6 +49,7 @@ function sanitise(user: {
   email: string;
   phone: string;
   age: number;
+  dateOfBirth: string | null;
   role: string;
   createdAt: Date;
 }): SafeUser {
@@ -45,6 +59,7 @@ function sanitise(user: {
     email: user.email,
     phone: user.phone,
     age: user.age,
+    dateOfBirth: user.dateOfBirth,
     role: user.role as UserRole,
     createdAt: user.createdAt,
   };
@@ -73,7 +88,8 @@ export const AuthService = {
       httpError('Name must be at least 2 characters', 400);
     }
 
-    if (data.age < 5 || data.age > 120) {
+    const age = calculateAge(data.dateOfBirth);
+    if (age < 5 || age > 120) {
       httpError('Age must be between 5 and 120', 400);
     }
 
@@ -96,7 +112,8 @@ export const AuthService = {
         name: data.name.trim(),
         email: data.email.toLowerCase().trim(),
         phone: data.phone,
-        age: data.age,
+        age,
+        dateOfBirth: data.dateOfBirth,
         password: hashedPassword,
         role: 'CUSTOMER',
       },
@@ -108,8 +125,6 @@ export const AuthService = {
   async login(prisma: PrismaClient, data: LoginInput): Promise<SafeUser> {
     const user = await prisma.user.findUnique({ where: { phone: data.phone } });
 
-    // Use same error message for both missing user and wrong password
-    // to prevent phone enumeration
     if (!user) {
       httpError('Invalid phone number or password', 401);
     }

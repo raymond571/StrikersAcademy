@@ -36,7 +36,7 @@ interface AuthContextValue {
     name: string;
     email: string;
     phone: string;
-    age: number;
+    dateOfBirth: string;
     password: string;
   }) => Promise<User>;
 }
@@ -68,7 +68,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const register = useCallback(
-    async (data: { name: string; email: string; phone: string; age: number; password: string }) => {
+    async (data: { name: string; email: string; phone: string; dateOfBirth: string; password: string }) => {
       const { user } = await authApi.register(data);
       setUser(user);
       return user;

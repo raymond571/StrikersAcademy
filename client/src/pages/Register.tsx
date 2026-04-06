@@ -10,7 +10,7 @@ export default function RegisterPage() {
     name: '',
     email: '',
     phone: '',
-    age: '',
+    dateOfBirth: '',
     password: '',
   });
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +34,7 @@ export default function RegisterPage() {
         name: form.name,
         email: form.email,
         phone: form.phone,
-        age: parseInt(form.age, 10),
+        dateOfBirth: form.dateOfBirth,
         password: form.password,
       });
       navigate(getHomeRoute(registeredUser.role));
@@ -103,16 +103,14 @@ export default function RegisterPage() {
           </div>
 
           <div>
-            <label htmlFor="age" className="label">Age</label>
+            <label htmlFor="dateOfBirth" className="label">Date of Birth</label>
             <input
-              id="age"
-              name="age"
-              type="number"
+              id="dateOfBirth"
+              name="dateOfBirth"
+              type="date"
               className="input"
-              placeholder="22"
-              min={5}
-              max={120}
-              value={form.age}
+              max={new Date().toISOString().split('T')[0]}
+              value={form.dateOfBirth}
               onChange={handleChange}
               required
             />

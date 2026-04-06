@@ -6,6 +6,7 @@ export interface User {
   email: string;
   phone: string;
   age: number;
+  dateOfBirth: string | null;
   role: UserRole;
   createdAt: string; // ISO date string (serialised for transport)
 }
@@ -15,7 +16,7 @@ export interface RegisterPayload {
   name: string;
   email: string;
   phone: string;
-  age: number;
+  dateOfBirth: string; // YYYY-MM-DD
   password: string;
 }
 

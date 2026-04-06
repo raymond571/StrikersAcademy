@@ -275,6 +275,16 @@ export function BookingsTab({ initialFilter = '' }: Props) {
     }
   };
 
+  const handleMarkPaid = async (bookingId: string) => {
+    if (!confirm('Mark this offline booking as paid?')) return;
+    try {
+      await adminApi.markAsPaid(bookingId);
+      fetchBookings();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to mark as paid');
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Filters */}
@@ -364,6 +374,14 @@ export function BookingsTab({ initialFilter = '' }: Props) {
                         className="rounded bg-orange-500 px-2 py-1 text-xs text-white hover:bg-orange-600"
                       >
                         Refund
+                      </button>
+                    )}
+                    {b.paymentMethod === 'OFFLINE' && b.payment?.status !== 'SUCCESS' && (b.status === 'PENDING' || b.status === 'CONFIRMED') && (
+                      <button
+                        onClick={() => handleMarkPaid(b.id)}
+                        className="rounded bg-emerald-600 px-2 py-1 text-xs text-white hover:bg-emerald-700"
+                      >
+                        Mark Paid
                       </button>
                     )}
                   </div>

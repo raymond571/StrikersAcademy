@@ -286,6 +286,36 @@ export const AdminService = {
     });
   },
 
+  /** Mark an offline booking as paid */
+  async markAsPaid(prisma: PrismaClient, bookingId: string) {
+    const booking = await prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: { payment: true },
+    });
+    if (!booking) httpError('Booking not found', 404);
+    if (booking!.paymentMethod !== 'OFFLINE') httpError('Only offline bookings can be marked as paid', 400);
+    if (booking!.payment?.status === 'SUCCESS') httpError('Already marked as paid', 400);
+
+    return prisma.$transaction(async (tx: TxClient) => {
+      if (booking!.payment) {
+        await tx.payment.update({
+          where: { id: booking!.payment.id },
+          data: { status: 'SUCCESS', paidAt: new Date() },
+        });
+      }
+      const updated = await tx.booking.update({
+        where: { id: bookingId },
+        data: { status: 'CONFIRMED' },
+        include: {
+          user: { select: { id: true, name: true, phone: true } },
+          slot: { include: { facility: true } },
+          payment: true,
+        },
+      });
+      return updated;
+    });
+  },
+
   /** List all users with pagination */
   async listUsers(prisma: PrismaClient, page: number, limit: number) {
     const [users, total] = await Promise.all([
@@ -312,7 +342,7 @@ export const AdminService = {
 
   /** Create a user (admin can set role) */
   async createUser(prisma: PrismaClient, data: {
-    name: string; email: string; phone: string; age: number; password: string; role: string;
+    name: string; email: string; phone: string; dateOfBirth: string; password: string; role: string;
   }) {
     const existingPhone = await prisma.user.findUnique({ where: { phone: data.phone } });
     if (existingPhone) httpError('Phone number already registered', 409);
@@ -320,17 +350,25 @@ export const AdminService = {
     const existingEmail = await prisma.user.findUnique({ where: { email: data.email.toLowerCase().trim() } });
     if (existingEmail) httpError('Email already registered', 409);
 
+    // Calculate age from DOB
+    const birth = new Date(data.dateOfBirth);
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    const md = today.getMonth() - birth.getMonth();
+    if (md < 0 || (md === 0 && today.getDate() < birth.getDate())) age--;
+
     const hashed = await hashPassword(data.password);
     return prisma.user.create({
       data: {
         name: data.name.trim(),
         email: data.email.toLowerCase().trim(),
         phone: data.phone,
-        age: data.age,
+        age,
+        dateOfBirth: data.dateOfBirth,
         password: hashed,
         role: data.role,
       },
-      select: { id: true, name: true, email: true, phone: true, age: true, role: true, createdAt: true },
+      select: { id: true, name: true, email: true, phone: true, age: true, dateOfBirth: true, role: true, createdAt: true },
     });
   },
 

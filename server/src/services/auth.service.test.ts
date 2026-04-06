@@ -22,7 +22,7 @@ const validRegisterData = {
   name: 'Arul',
   email: 'arul@test.com',
   phone: '9876543210',
-  age: 25,
+  dateOfBirth: '2001-03-10',
   password: 'password123',
 };
 
@@ -91,15 +91,16 @@ describe('AuthService.register', () => {
     ).rejects.toThrow('at least 2 characters');
   });
 
-  it('rejects age below 5', async () => {
+  it('rejects age below 5 (DOB too recent)', async () => {
+    const recentDOB = `${new Date().getFullYear() - 2}-01-01`;
     await expect(
-      AuthService.register(prisma, { ...validRegisterData, age: 3 }),
+      AuthService.register(prisma, { ...validRegisterData, dateOfBirth: recentDOB }),
     ).rejects.toThrow('between 5 and 120');
   });
 
-  it('rejects age above 120', async () => {
+  it('rejects age above 120 (DOB too old)', async () => {
     await expect(
-      AuthService.register(prisma, { ...validRegisterData, age: 150 }),
+      AuthService.register(prisma, { ...validRegisterData, dateOfBirth: '1880-01-01' }),
     ).rejects.toThrow('between 5 and 120');
   });
 
@@ -125,7 +126,7 @@ describe('AuthService.register', () => {
     prisma.user.findUnique.mockResolvedValue(null);
     prisma.user.create.mockResolvedValue({
       id: 'u1', name: 'Arul', email: 'arul@test.com', phone: '9876543210',
-      age: 25, role: 'CUSTOMER', password: 'x', createdAt: new Date(),
+      age: 25, dateOfBirth: '2001-03-10', role: 'CUSTOMER', password: 'x', createdAt: new Date(),
     });
 
     await AuthService.register(prisma, {
@@ -152,7 +153,7 @@ describe('AuthService.login', () => {
   it('returns sanitised user on valid credentials', async () => {
     prisma.user.findUnique.mockResolvedValue({
       id: 'u1', name: 'Arul', email: 'arul@test.com', phone: '9876543210',
-      age: 25, role: 'CUSTOMER', password: 'salt:hash', createdAt: new Date('2026-01-01'),
+      age: 25, dateOfBirth: '2001-03-10', role: 'CUSTOMER', password: 'salt:hash', createdAt: new Date('2026-01-01'),
     });
     vi.mocked(verifyPassword).mockResolvedValue(true);
 
@@ -192,7 +193,7 @@ describe('AuthService.getById', () => {
   it('returns sanitised user when found', async () => {
     prisma.user.findUnique.mockResolvedValue({
       id: 'u1', name: 'Arul', email: 'arul@test.com', phone: '9876543210',
-      age: 25, role: 'CUSTOMER', password: 'salt:hash', createdAt: new Date(),
+      age: 25, dateOfBirth: '2001-03-10', role: 'CUSTOMER', password: 'salt:hash', createdAt: new Date(),
     });
 
     const result = await AuthService.getById(prisma, 'u1');

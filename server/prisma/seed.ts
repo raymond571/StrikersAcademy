@@ -17,12 +17,13 @@ async function main() {
   const adminPassword = await hashPassword('admin123');
   const admin = await prisma.user.upsert({
     where: { phone: '9000000001' },
-    update: { name: 'Admin', email: 'admin@strikers.com', age: 30, password: adminPassword, role: 'ADMIN' },
+    update: { name: 'Admin', email: 'admin@strikers.com', age: 30, dateOfBirth: '1996-01-15', password: adminPassword, role: 'ADMIN' },
     create: {
       name: 'Admin',
       email: 'admin@strikers.com',
       phone: '9000000001',
       age: 30,
+      dateOfBirth: '1996-01-15',
       password: adminPassword,
       role: 'ADMIN',
     },
@@ -31,12 +32,13 @@ async function main() {
   const staffPassword = await hashPassword('staff123');
   const staff = await prisma.user.upsert({
     where: { phone: '9000000002' },
-    update: { name: 'Staff', email: 'staff@strikers.com', age: 25, password: staffPassword, role: 'STAFF' },
+    update: { name: 'Staff', email: 'staff@strikers.com', age: 25, dateOfBirth: '2001-06-20', password: staffPassword, role: 'STAFF' },
     create: {
       name: 'Staff',
       email: 'staff@strikers.com',
       phone: '9000000002',
       age: 25,
+      dateOfBirth: '2001-06-20',
       password: staffPassword,
       role: 'STAFF',
     },
@@ -45,12 +47,13 @@ async function main() {
   const customerPassword = await hashPassword('test123');
   const customer = await prisma.user.upsert({
     where: { phone: '9876543210' },
-    update: { name: 'Arul', email: 'arul@test.com', age: 25, password: customerPassword, role: 'CUSTOMER' },
+    update: { name: 'Arul', email: 'arul@test.com', age: 25, dateOfBirth: '2001-03-10', password: customerPassword, role: 'CUSTOMER' },
     create: {
       name: 'Arul',
       email: 'arul@test.com',
       phone: '9876543210',
       age: 25,
+      dateOfBirth: '2001-03-10',
       password: customerPassword,
       role: 'CUSTOMER',
     },

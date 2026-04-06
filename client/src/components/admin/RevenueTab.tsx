@@ -43,6 +43,26 @@ export function RevenueTab() {
         <button onClick={fetchReport} disabled={loading} className="btn-primary">
           {loading ? 'Loading...' : 'Generate Report'}
         </button>
+        {report && (
+          <button
+            onClick={async () => {
+              const res = await fetch(`/api/admin/reports/revenue/pdf?from=${from}&to=${to}`, { credentials: 'include' });
+              if (!res.ok) { alert('Failed to download'); return; }
+              const blob = await res.blob();
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `revenue-${from}-to-${to}.pdf`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+            }}
+            className="btn-secondary"
+          >
+            Download PDF
+          </button>
+        )}
       </div>
 
       {error && <p className="text-sm text-red-500">{error}</p>}

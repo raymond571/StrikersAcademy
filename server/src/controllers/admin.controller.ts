@@ -139,6 +139,13 @@ export class AdminController {
     return success({ booking }, 'Booking status updated');
   }
 
+  /** PATCH /api/admin/bookings/:id/mark-paid */
+  static async markAsPaid(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = request.params as { id: string };
+    const booking = await AdminService.markAsPaid(request.server.prisma, id);
+    return success({ booking }, 'Booking marked as paid');
+  }
+
   /** GET /api/admin/users */
   static async listUsers(request: FastifyRequest, reply: FastifyReply) {
     const parsed = paginationSchema.safeParse(request.query);
@@ -155,7 +162,7 @@ export class AdminController {
       name: z.string().min(2).max(100),
       email: z.string().email().max(255),
       phone: z.string().regex(/^[6-9]\d{9}$/),
-      age: z.number().int().min(5).max(120),
+      dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       password: z.string().min(6).max(128),
       role: z.enum(['ADMIN', 'STAFF', 'CUSTOMER']).default('CUSTOMER'),
     });

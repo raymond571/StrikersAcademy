@@ -13,12 +13,12 @@ interface UserForm {
   name: string;
   email: string;
   phone: string;
-  age: string;
+  dateOfBirth: string;
   password: string;
   role: string;
 }
 
-const emptyForm: UserForm = { name: '', email: '', phone: '', age: '', password: '', role: 'CUSTOMER' };
+const emptyForm: UserForm = { name: '', email: '', phone: '', dateOfBirth: '', password: '', role: 'CUSTOMER' };
 
 export function UsersTab() {
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -61,7 +61,7 @@ export function UsersTab() {
       name: u.name,
       email: u.email,
       phone: u.phone,
-      age: String(u.age),
+      dateOfBirth: u.dateOfBirth || '',
       password: '',
       role: u.role,
     });
@@ -71,8 +71,8 @@ export function UsersTab() {
 
   const handleSubmit = async () => {
     setError(null);
-    if (!form.name || !form.email || !form.age) {
-      setError('Name, email, and age are required');
+    if (!form.name || !form.email || !form.dateOfBirth) {
+      setError('Name, email, and date of birth are required');
       return;
     }
 
@@ -82,7 +82,7 @@ export function UsersTab() {
         const data: Record<string, unknown> = {
           name: form.name,
           email: form.email,
-          age: parseInt(form.age, 10),
+          dateOfBirth: form.dateOfBirth,
           role: form.role,
         };
         if (form.password) data.password = form.password;
@@ -97,7 +97,7 @@ export function UsersTab() {
           name: form.name,
           email: form.email,
           phone: form.phone,
-          age: parseInt(form.age, 10),
+          dateOfBirth: form.dateOfBirth,
           password: form.password,
           role: form.role,
         });
@@ -125,9 +125,29 @@ export function UsersTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <h3 className="text-base font-semibold">Users</h3>
-        <button onClick={openCreate} className="btn-primary text-xs">+ Add User</button>
+        <div className="flex gap-2">
+          <button
+            onClick={async () => {
+              const res = await fetch('/api/admin/users/export', { credentials: 'include' });
+              if (!res.ok) { alert('Failed'); return; }
+              const blob = await res.blob();
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `users-export-${new Date().toISOString().split('T')[0]}.csv`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+            }}
+            className="btn-secondary text-xs"
+          >
+            Export CSV
+          </button>
+          <button onClick={openCreate} className="btn-primary text-xs">+ Add User</button>
+        </div>
       </div>
 
       {/* Create / Edit form */}
@@ -159,7 +179,7 @@ export function UsersTab() {
             </div>
             <div>
               <label className="label">Age</label>
-              <input type="number" value={form.age} onChange={(e) => setForm({ ...form, age: e.target.value })} className="input" min={5} max={120} />
+              <input type="date" value={form.dateOfBirth} onChange={(e) => setForm({ ...form, dateOfBirth: e.target.value })} className="input" max={new Date().toISOString().split('T')[0]} />
             </div>
             <div>
               <label className="label">{editingId ? 'New Password (leave blank to keep)' : 'Password'}</label>
@@ -209,7 +229,7 @@ export function UsersTab() {
                   </div>
                   <p className="text-sm text-gray-600">{u.phone} &middot; {u.email}</p>
                   <p className="text-xs text-gray-400">
-                    Age: {u.age} &middot; Bookings: {u._count.bookings} &middot; Joined: {new Date(u.createdAt).toLocaleDateString('en-IN')}
+                    Age: {u.age}{u.dateOfBirth ? ` (DOB: ${u.dateOfBirth})` : ''} &middot; Bookings: {u._count.bookings} &middot; Joined: {new Date(u.createdAt).toLocaleDateString('en-IN')}
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">

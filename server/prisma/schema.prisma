@@ -21,7 +21,8 @@ model User {
   name      String                        // mandatory — full name
   email     String   @unique              // mandatory — used for future recovery (OTP)
   phone     String   @unique              // mandatory — primary login identifier (phone + password)
-  age       Int                           // mandatory — user's age
+  age       Int                           // computed from dateOfBirth
+  dateOfBirth String?                     // ISO date: YYYY-MM-DD
   password  String                        // scrypt hashed (see utils/password.ts)
   role      String   @default("CUSTOMER") // Role: "ADMIN" | "STAFF" | "CUSTOMER"
   createdAt DateTime @default(now())

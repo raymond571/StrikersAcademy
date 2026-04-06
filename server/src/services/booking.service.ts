@@ -37,8 +37,8 @@ export interface BatchBookingInput {
 
 const ACTIVE_STATUSES = ['PENDING', 'CONFIRMED'];
 
-// Cancellation cutoff: 2 hours before slot start
-const CANCEL_CUTOFF_MS = 2 * 60 * 60 * 1000;
+// Cancellation/update cutoff: 25 minutes before slot start
+const CANCEL_CUTOFF_MS = 25 * 60 * 1000;
 
 export const BookingService = {
   /**
@@ -342,6 +342,15 @@ export const BookingService = {
       httpError('New slot is the same as the current slot', 400);
     }
 
+    // Check update cutoff (admin/staff can update anytime)
+    if (userRole === 'CUSTOMER') {
+      const slotDateTime = new Date(`${booking!.slot.date}T${booking!.slot.startTime}:00`);
+      const now = new Date();
+      if (slotDateTime.getTime() - now.getTime() < CANCEL_CUTOFF_MS) {
+        httpError('Changes are only allowed at least 25 minutes before the slot start time', 400);
+      }
+    }
+
     // Pre-transaction: validate new slot
     const newSlot = await prisma.slot.findUnique({
       where: { id: newSlotId },
@@ -501,7 +510,7 @@ export const BookingService = {
       const now = new Date();
       if (slotDateTime.getTime() - now.getTime() < CANCEL_CUTOFF_MS) {
         httpError(
-          'Cancellation is only allowed at least 2 hours before the slot start time',
+          'Changes are only allowed at least 25 minutes before the slot start time',
           400,
         );
       }

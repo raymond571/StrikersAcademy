@@ -19,6 +19,15 @@ function formatPaise(paise: number) {
   return `₹${(paise / 100).toLocaleString('en-IN')}`;
 }
 
+/** Check if a booking can be modified (25 min before slot start) */
+function canModifyBooking(booking: Booking): boolean {
+  if (booking.status !== 'PENDING' && booking.status !== 'CONFIRMED') return false;
+  if (!booking.slot?.date || !booking.slot?.startTime) return false;
+  const slotTime = new Date(`${booking.slot.date}T${booking.slot.startTime}:00`);
+  const now = new Date();
+  return slotTime.getTime() - now.getTime() >= 25 * 60 * 1000;
+}
+
 /** Modal for picking a new slot to reschedule a booking */
 function UpdateSlotModal({ booking, onClose, onUpdated }: {
   booking: Booking;
@@ -408,8 +417,7 @@ function BookingCard({ group, cancelling, onCancel, onCancelBatch, onUpdate }: {
   const [expanded, setExpanded] = useState(false);
   const [cancelTarget, setCancelTarget] = useState<string | null>(null);
   const isBatch = group.bookings.length > 1;
-  const canAct = group.status === 'PENDING' || group.status === 'CONFIRMED' || group.status === 'PARTIAL';
-  const activeBookings = group.bookings.filter(b => b.status === 'PENDING' || b.status === 'CONFIRMED');
+  const modifiableBookings = group.bookings.filter(canModifyBooking);
 
   const handleInvoice = async (bookingId: string) => {
     try {
@@ -456,7 +464,7 @@ function BookingCard({ group, cancelling, onCancel, onCancelBatch, onUpdate }: {
               {(booking.status === 'CONFIRMED' || booking.status === 'REFUNDED') && (
                 <button onClick={() => handleInvoice(booking.id)} className="rounded bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-700">Invoice</button>
               )}
-              {canAct && (
+              {canModifyBooking(booking) && (
                 <>
                   <button onClick={() => onUpdate(booking)} className="rounded bg-brand-600 px-2 py-1 text-xs text-white hover:bg-brand-700">Update</button>
                   <button onClick={() => setCancelTarget(booking.id)} disabled={!!cancelling} className="rounded bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700 disabled:opacity-50">
@@ -520,7 +528,7 @@ function BookingCard({ group, cancelling, onCancel, onCancelBatch, onUpdate }: {
           <div className="border-t border-gray-100 px-4 pb-4">
             <div className="space-y-2 pt-3">
               {group.bookings.map((b) => {
-                const bCanAct = b.status === 'PENDING' || b.status === 'CONFIRMED';
+                const bCanMod = canModifyBooking(b);
                 return (
                   <div key={b.id} className="flex flex-wrap items-center justify-between text-sm bg-gray-50 rounded-lg px-3 py-2 gap-2">
                     <div className="min-w-0">
@@ -532,7 +540,7 @@ function BookingCard({ group, cancelling, onCancel, onCancelBatch, onUpdate }: {
                       )}
                     </div>
                     <div className="flex items-center gap-1.5">
-                      {bCanAct && (
+                      {bCanMod && (
                         <>
                           <button onClick={() => onUpdate(b)} className="text-xs text-brand-600 hover:underline">Update</button>
                           <button onClick={() => setCancelTarget(b.id)} className="text-xs text-red-600 hover:underline">Cancel</button>
@@ -550,13 +558,13 @@ function BookingCard({ group, cancelling, onCancel, onCancelBatch, onUpdate }: {
                   Download Invoice
                 </button>
               )}
-              {activeBookings.length > 1 && (
+              {modifiableBookings.length > 1 && (
                 <button
-                  onClick={() => onCancelBatch(activeBookings.map(b => b.id))}
+                  onClick={() => onCancelBatch(modifiableBookings.map(b => b.id))}
                   disabled={!!cancelling}
                   className="rounded bg-red-600 px-3 py-1 text-xs text-white hover:bg-red-700 disabled:opacity-50"
                 >
-                  {cancelling ? 'Cancelling...' : `Cancel All ${activeBookings.length} Slots`}
+                  {cancelling ? 'Cancelling...' : `Cancel All ${modifiableBookings.length} Slots`}
                 </button>
               )}
               {group.status === 'PENDING' && group.paymentMethod === 'ONLINE' && (

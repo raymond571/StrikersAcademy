@@ -2,6 +2,7 @@ import { FastifyPluginAsync } from 'fastify';
 import { authenticate, requireAdmin, requireStaffOrAdmin } from '../middleware/authenticate';
 import { AdminController } from '../controllers/admin.controller';
 import { SettingsController } from '../controllers/settings.controller';
+import { ReportController } from '../controllers/report.controller';
 
 const adminRoutes: FastifyPluginAsync = async (fastify) => {
   // ── ADMIN + STAFF ────────────────────────────────────────────
@@ -9,6 +10,7 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/bookings', { preHandler: [authenticate, requireStaffOrAdmin] }, AdminController.listBookings);
   fastify.post('/bookings', { preHandler: [authenticate, requireStaffOrAdmin] }, AdminController.createManualBooking);
   fastify.patch('/bookings/:id/status', { preHandler: [authenticate, requireStaffOrAdmin] }, AdminController.updateBookingStatus);
+  fastify.patch('/bookings/:id/mark-paid', { preHandler: [authenticate, requireStaffOrAdmin] }, AdminController.markAsPaid);
   fastify.get('/users', { preHandler: [authenticate, requireStaffOrAdmin] }, AdminController.listUsers);
   fastify.post('/users', { preHandler: [authenticate, requireAdmin] }, AdminController.createUser);
   fastify.patch('/users/:id', { preHandler: [authenticate, requireAdmin] }, AdminController.updateUser);
@@ -19,6 +21,8 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
   // ── ADMIN only ───────────────────────────────────────────────
   fastify.post('/slots/bulk', { preHandler: [authenticate, requireAdmin] }, AdminController.bulkCreateSlots);
   fastify.get('/reports/revenue', { preHandler: [authenticate, requireAdmin] }, AdminController.revenueReport);
+  fastify.get('/reports/revenue/pdf', { preHandler: [authenticate, requireAdmin] }, ReportController.revenueReportPDF);
+  fastify.get('/users/export', { preHandler: [authenticate, requireAdmin] }, ReportController.userExportCSV);
   fastify.get('/payments/:id/verify', { preHandler: [authenticate, requireAdmin] }, AdminController.verifyPayment);
   fastify.get('/coupons', { preHandler: [authenticate, requireAdmin] }, AdminController.listCoupons);
   fastify.post('/coupons', { preHandler: [authenticate, requireAdmin] }, AdminController.createCoupon);

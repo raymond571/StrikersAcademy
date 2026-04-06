@@ -39,7 +39,7 @@ export const authApi = {
     name: string;
     email: string;
     phone: string;
-    age: number;
+    dateOfBirth: string;
     password: string;
   }): Promise<AuthResponse> {
     const res = await api.post<{ data: AuthResponse }>('/api/auth/register', data);
@@ -221,6 +221,7 @@ export interface AdminUser {
   email: string;
   phone: string;
   age: number;
+  dateOfBirth: string | null;
   role: string;
   createdAt: string;
   _count: { bookings: number };
@@ -307,13 +308,18 @@ export const adminApi = {
     return res.data.data.booking;
   },
 
+  async markAsPaid(id: string): Promise<AdminBooking> {
+    const res = await api.patch<{ data: { booking: AdminBooking } }>(`/api/admin/bookings/${id}/mark-paid`);
+    return res.data.data.booking;
+  },
+
   async listUsers(params?: { page?: number; limit?: number }): Promise<PaginatedResponse<AdminUser>> {
     const res = await api.get<PaginatedResponse<AdminUser>>('/api/admin/users', { params });
     return res.data;
   },
 
   async createUser(data: {
-    name: string; email: string; phone: string; age: number; password: string; role?: string;
+    name: string; email: string; phone: string; dateOfBirth: string; password: string; role?: string;
   }): Promise<AdminUser> {
     const res = await api.post<{ data: { user: AdminUser } }>('/api/admin/users', data);
     return res.data.data.user;

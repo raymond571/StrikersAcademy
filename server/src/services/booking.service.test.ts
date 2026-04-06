@@ -310,9 +310,9 @@ describe('BookingService.cancelBooking', () => {
   });
 
   it('throws 400 when cancellation window has passed for CUSTOMER', async () => {
-    // Slot starts very soon (use today's date with a time 30 mins from now)
+    // Slot starts in 10 minutes (within the 25-min cutoff)
     const now = new Date();
-    const soon = new Date(now.getTime() + 30 * 60 * 1000);
+    const soon = new Date(now.getTime() + 10 * 60 * 1000);
     const soonDate = `${soon.getFullYear()}-${String(soon.getMonth() + 1).padStart(2, '0')}-${String(soon.getDate()).padStart(2, '0')}`;
     const soonTime = `${String(soon.getHours()).padStart(2, '0')}:${String(soon.getMinutes()).padStart(2, '0')}`;
     prisma.booking.findUnique.mockResolvedValue({
@@ -325,12 +325,12 @@ describe('BookingService.cancelBooking', () => {
 
     await expect(
       BookingService.cancelBooking(prisma, 'bk-1', 'user-1', 'CUSTOMER'),
-    ).rejects.toThrow('at least 2 hours');
+    ).rejects.toThrow('at least 25 minutes');
   });
 
   it('allows ADMIN to cancel even within cutoff window', async () => {
     const now = new Date();
-    const soon2 = new Date(now.getTime() + 30 * 60 * 1000);
+    const soon2 = new Date(now.getTime() + 10 * 60 * 1000);
     const soonDate2 = `${soon2.getFullYear()}-${String(soon2.getMonth() + 1).padStart(2, '0')}-${String(soon2.getDate()).padStart(2, '0')}`;
     const soonTime2 = `${String(soon2.getHours()).padStart(2, '0')}:${String(soon2.getMinutes()).padStart(2, '0')}`;
     prisma.booking.findUnique.mockResolvedValue({
