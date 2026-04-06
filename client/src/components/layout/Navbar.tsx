@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth, isAdminRole } from '../../hooks/useAuth';
+import { usePWAInstall } from '../../hooks/usePWAInstall';
 
 export function Navbar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
+  const { canInstall, install } = usePWAInstall();
 
   const handleLogout = async () => {
     setMenuOpen(false);
@@ -41,12 +43,22 @@ export function Navbar() {
                     Admin
                   </Link>
                 )}
+                {canInstall && (
+                  <button onClick={install} className="text-sm font-medium text-brand-600 hover:text-brand-700">
+                    Install App
+                  </button>
+                )}
                 <button onClick={handleLogout} className="btn-secondary text-xs">
                   Logout
                 </button>
               </>
             ) : (
               <>
+                {canInstall && (
+                  <button onClick={install} className="text-sm font-medium text-brand-600 hover:text-brand-700">
+                    Install App
+                  </button>
+                )}
                 <Link to="/login" className="btn-secondary text-xs">Login</Link>
                 <Link to="/register" className="btn-primary text-xs">Register</Link>
               </>
@@ -100,6 +112,14 @@ export function Navbar() {
                   Admin Panel
                 </Link>
               )}
+              {canInstall && (
+                <button
+                  onClick={() => { install(); closeMenu(); }}
+                  className="block w-full text-left rounded-lg px-3 py-2 text-sm font-medium text-brand-600 hover:bg-brand-50"
+                >
+                  Install App
+                </button>
+              )}
               <div className="border-t border-gray-100 pt-2 mt-2">
                 <p className="px-3 text-xs text-gray-400">{user.name} ({user.phone})</p>
                 <button
@@ -112,6 +132,14 @@ export function Navbar() {
             </>
           ) : (
             <>
+              {canInstall && (
+                <button
+                  onClick={() => { install(); closeMenu(); }}
+                  className="block w-full text-left rounded-lg px-3 py-2 text-sm font-medium text-brand-600 hover:bg-brand-50"
+                >
+                  Install App
+                </button>
+              )}
               <Link
                 to="/login"
                 onClick={closeMenu}

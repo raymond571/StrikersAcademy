@@ -1,34 +1,11 @@
-import { useState, useEffect } from 'react';
-
-interface BeforeInstallPromptEvent extends Event {
-  prompt(): Promise<void>;
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
-}
+import { useState } from 'react';
+import { usePWAInstall } from '../hooks/usePWAInstall';
 
 export function PWAInstallPrompt() {
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const { canInstall, install } = usePWAInstall();
   const [dismissed, setDismissed] = useState(false);
 
-  useEffect(() => {
-    const handler = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
-    };
-
-    window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
-
-  const handleInstall = async () => {
-    if (!deferredPrompt) return;
-    await deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setDeferredPrompt(null);
-    }
-  };
-
-  if (!deferredPrompt || dismissed) return null;
+  if (!canInstall || dismissed) return null;
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 bg-brand-600 text-white px-4 py-3 shadow-lg sm:bottom-4 sm:left-4 sm:right-auto sm:rounded-xl sm:max-w-sm">
@@ -38,7 +15,7 @@ export function PWAInstallPrompt() {
           <p className="text-xs text-brand-100">Add to home screen for quick access</p>
         </div>
         <button
-          onClick={handleInstall}
+          onClick={install}
           className="shrink-0 rounded-lg bg-white text-brand-600 px-3 py-1.5 text-xs font-semibold hover:bg-brand-50"
         >
           Install
