@@ -8,7 +8,7 @@ module.exports = {
     {
       name: 'strikers-api',
       cwd: '/var/www/strickersacademy/server',
-      script: 'dist/index.js',
+      script: 'dist/server/src/index.js',
       interpreter: 'node',
 
       // Instances & mode
