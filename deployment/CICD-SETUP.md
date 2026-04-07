@@ -1,7 +1,7 @@
 # StrikersAcademy — CI/CD & Infrastructure Setup Guide
 
 Complete step-by-step guide to connect GitHub Actions, Hetzner VPS, and Cloudflare.
-**Last updated:** 2026-04-06 (verified working deployment)
+**Last updated:** 2026-04-07 (added email notifications, PWA, multi-slot booking)
 
 > **Template-ready:** This document captures every issue found during real deployment.
 > Search for "GOTCHA" to find all hard-won lessons.
@@ -120,6 +120,11 @@ Go to: https://github.com/raymond571/StrikersAcademy/settings/environments
 | `RAZORPAY_KEY_ID` | `rzp_live_XXXX` or test key for now | Razorpay dashboard |
 | `RAZORPAY_KEY_SECRET` | Live or test secret | Razorpay dashboard |
 | `RAZORPAY_WEBHOOK_SECRET` | Webhook secret | Razorpay dashboard > Webhooks |
+| `SMTP_HOST` | `smtpout.secureserver.net` | GoDaddy SMTP server |
+| `SMTP_PORT` | `587` | GOTCHA: port 465 blocked on Hetzner, use 587 |
+| `SMTP_USER` | Your GoDaddy email (e.g. `info@strickersacademy.in`) | GoDaddy Workspace Email |
+| `SMTP_PASS` | GoDaddy email password | GoDaddy Workspace Email |
+| `ADMIN_EMAIL` | Admin notification recipient (e.g. `info@strickersacademy.in`) | Where admin alerts go |
 
 ---
 
@@ -318,13 +323,51 @@ Nginx (port 443, reverse proxy + static files)
     v
 PM2 > Fastify (port 5000, localhost only)
     |
-    v
-PostgreSQL (port 5432, localhost only)
+    +--> PostgreSQL (port 5432, localhost only)
+    |
+    +--> GoDaddy SMTP (smtpout.secureserver.net:587)
+         |- Booking confirmation (user + admin, with PDF invoice)
+         |- Payment confirmation (user, with PDF invoice)
+         |- Cancellation/refund notification (user + admin)
+         |- 1-hour session reminder (user, via cron job)
 ```
 
 **Nginx notes:**
 - Static files served from `/var/www/strickersacademy/client/dist`
 - Cloudflare Authenticated Origin Pulls causes "400 No required SSL certificate" when curling locally via HTTPS — this is expected, test API directly on port 5000
+
+---
+
+## Email Notifications
+
+Transactional emails sent via GoDaddy Workspace SMTP (Nodemailer).
+
+### Events that trigger emails
+
+| Event | Recipients | Attachment |
+|-------|-----------|------------|
+| Booking confirmed | User + Admin | PDF invoice |
+| Payment verified | User | PDF invoice |
+| Booking cancelled / refunded | User + Admin | Charge breakdown in body |
+| 1-hour session reminder | User | — |
+
+### SMTP Configuration
+
+| Env Var | Value | Notes |
+|---------|-------|-------|
+| `SMTP_HOST` | `smtpout.secureserver.net` | GoDaddy outbound SMTP |
+| `SMTP_PORT` | `587` | STARTTLS. **GOTCHA:** Port 465 is blocked on Hetzner VPS |
+| `SMTP_USER` | `info@strickersacademy.in` | GoDaddy Workspace email |
+| `SMTP_PASS` | (secret) | GoDaddy email password |
+| `ADMIN_EMAIL` | `info@strickersacademy.in` | Receives admin notifications |
+
+**GOTCHA (Hetzner):** Hetzner blocks outbound port 465 (implicit TLS) by default. Use port 587 (STARTTLS) instead. No support ticket needed.
+
+**GOTCHA (GoDaddy):** The SMTP user must be a full GoDaddy Workspace Email address (not an alias). The "From" address in emails must match `SMTP_USER`.
+
+### Session Reminder Cron
+
+The server runs a cron job (node-cron) that checks every 15 minutes for bookings starting in the next hour and sends reminder emails. This runs inside the Fastify process (PM2-managed), no separate cron setup needed.
 
 ---
 
