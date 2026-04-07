@@ -553,7 +553,7 @@ function BookingCard({ group, cancelling, onCancel, onCancelBatch, onUpdate }: {
             </div>
 
             <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-gray-100">
-              {(group.status === 'CONFIRMED' || group.status === 'REFUNDED') && (
+              {(group.status === 'CONFIRMED' || group.status === 'REFUNDED' || group.status === 'PARTIAL') && (
                 <button onClick={() => handleInvoice(group.bookings[0].id)} className="rounded bg-gray-600 px-3 py-1 text-xs text-white hover:bg-gray-700">
                   Download Invoice
                 </button>

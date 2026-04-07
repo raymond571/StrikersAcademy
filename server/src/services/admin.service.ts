@@ -7,6 +7,7 @@ import { Prisma, PrismaClient } from '@prisma/client';
 type TxClient = Prisma.TransactionClient;
 import { PaymentService } from './payment.service';
 import { EmailService } from './email.service';
+import { SettingsService } from './settings.service';
 import { hashPassword } from '../utils/password';
 
 function httpError(message: string, statusCode: number): never {
@@ -226,18 +227,26 @@ export const AdminService = {
     });
     if (!booking) httpError('Booking not found', 404);
 
+    // Get cancellation charge for refunds
+    const chargePercent = await SettingsService.getCancellationChargePercent(prisma);
+
     const statusResult = await prisma.$transaction(async (tx: TxClient) => {
       const payment = booking!.payment;
 
       // Handle payment status changes — issue Razorpay refund if applicable
       if (status === 'REFUNDED' && payment && payment.status === 'SUCCESS') {
+        const cancellationCharge = Math.round(payment.amount * chargePercent / 100);
+        const refundableAmount = payment.amount - cancellationCharge;
+        let actualRefund = 0;
+
         if (payment.razorpayPaymentId) {
           try {
-            // Check how much has already been refunded (partial refunds from reschedule)
             const rzpPayment = await PaymentService.fetchPayment(payment.razorpayPaymentId);
             const remaining = (rzpPayment.amount ?? 0) - (rzpPayment.amount_refunded ?? 0);
-            if (remaining > 0) {
-              await PaymentService.refund(payment.razorpayPaymentId, remaining);
+            const toRefund = Math.min(refundableAmount, remaining);
+            if (toRefund > 0) {
+              await PaymentService.refund(payment.razorpayPaymentId, toRefund);
+              actualRefund = toRefund;
             }
           } catch (err: unknown) {
             const msg = (err as { error?: { description?: string } })?.error?.description
@@ -249,7 +258,12 @@ export const AdminService = {
         }
         await tx.payment.update({
           where: { id: payment.id },
-          data: { status: 'REFUNDED', refundedAt: new Date() },
+          data: {
+            status: 'REFUNDED',
+            refundedAt: new Date(),
+            cancellationCharge: cancellationCharge > 0 ? cancellationCharge : null,
+            refundAmount: actualRefund > 0 ? actualRefund : null,
+          },
         });
       }
       if (status === 'CANCELLED' && payment) {
