@@ -270,13 +270,26 @@ export const EmailService = {
     // Admin notification
     const adminEmail = getAdminEmail();
     if (adminEmail) {
+      const charge = booking.payment?.cancellationCharge || 0;
+      const refund = booking.payment?.refundAmount || 0;
+      const amt = booking.payment?.amount || 0;
+
       await sendMail(
         adminEmail,
         `Booking ${isRefunded ? 'Refunded' : 'Cancelled'} — ${booking.user.name}`,
         baseTemplate('Cancellation Alert', `
           <p><strong>${booking.user.name}</strong> (${booking.user.phone}) ${isRefunded ? 'refunded' : 'cancelled'} a booking.</p>
-          <p>${booking.slot?.facility?.name} — ${booking.slot?.date} ${booking.slot?.startTime}-${booking.slot?.endTime}</p>
-          ${booking.payment ? `<p>Amount: ${formatPaise(booking.payment.amount)}</p>` : ''}
+          <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:16px;margin:16px 0;">
+            <p style="margin:0;font-size:14px;color:#991b1b;">
+              <strong>${booking.slot?.facility?.name}</strong> — ${booking.slot?.date} at ${booking.slot?.startTime}-${booking.slot?.endTime}
+            </p>
+          </div>
+          ${booking.payment ? `
+            <table style="width:100%;font-size:14px;margin:16px 0;">
+              <tr><td style="padding:4px 0;color:#6b7280;">Booking Amount:</td><td style="text-align:right;font-weight:bold;">${formatPaise(amt)}</td></tr>
+              ${charge > 0 ? `<tr><td style="padding:4px 0;color:#ef4444;">Cancellation Charge (${charge > 0 ? Math.round(charge * 100 / amt) : 0}%):</td><td style="text-align:right;color:#ef4444;">- ${formatPaise(charge)}</td></tr>` : ''}
+              ${refund > 0 ? `<tr style="border-top:1px solid #e5e7eb;"><td style="padding:8px 0 4px;color:#10b981;font-weight:bold;">Refund Amount:</td><td style="text-align:right;color:#10b981;font-weight:bold;">${formatPaise(refund)}</td></tr>` : ''}
+            </table>` : ''}
         `, academyName),
       );
     }
