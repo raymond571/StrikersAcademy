@@ -50,30 +50,30 @@ jobs:
             git reset --hard "origin/$BRANCH"
 
             # 2. Write server .env from GitHub secrets
-            cat > "$APP_DIR/server/.env" <<'ENVEOF'
-NODE_ENV=${{ secrets.NODE_ENV || 'production' }}
-PORT=${{ secrets.PORT || '5000' }}
-HOST=127.0.0.1
-CLIENT_URL=${{ secrets.CLIENT_URL }}
-DATABASE_URL=${{ secrets.DATABASE_URL }}
-JWT_SECRET=${{ secrets.JWT_SECRET }}
-COOKIE_SECRET=${{ secrets.COOKIE_SECRET }}
-RAZORPAY_KEY_ID=${{ secrets.RAZORPAY_KEY_ID }}
-RAZORPAY_KEY_SECRET=${{ secrets.RAZORPAY_KEY_SECRET }}
-RAZORPAY_WEBHOOK_SECRET=${{ secrets.RAZORPAY_WEBHOOK_SECRET }}
-SMTP_HOST=${{ secrets.SMTP_HOST || 'smtpout.secureserver.net' }}
-SMTP_PORT=${{ secrets.SMTP_PORT || '587' }}
-SMTP_USER=${{ secrets.SMTP_USER }}
-SMTP_PASS=${{ secrets.SMTP_PASS }}
-ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }}
-ENVEOF
+            printf '%s\n' \
+              'NODE_ENV=${{ secrets.NODE_ENV || 'production' }}' \
+              'PORT=${{ secrets.PORT || '5000' }}' \
+              'HOST=127.0.0.1' \
+              'CLIENT_URL=${{ secrets.CLIENT_URL }}' \
+              'DATABASE_URL=${{ secrets.DATABASE_URL }}' \
+              'JWT_SECRET=${{ secrets.JWT_SECRET }}' \
+              'COOKIE_SECRET=${{ secrets.COOKIE_SECRET }}' \
+              'RAZORPAY_KEY_ID=${{ secrets.RAZORPAY_KEY_ID }}' \
+              'RAZORPAY_KEY_SECRET=${{ secrets.RAZORPAY_KEY_SECRET }}' \
+              'RAZORPAY_WEBHOOK_SECRET=${{ secrets.RAZORPAY_WEBHOOK_SECRET }}' \
+              'SMTP_HOST=${{ secrets.SMTP_HOST || 'smtpout.secureserver.net' }}' \
+              'SMTP_PORT=${{ secrets.SMTP_PORT || '587' }}' \
+              'SMTP_USER=${{ secrets.SMTP_USER }}' \
+              'SMTP_PASS=${{ secrets.SMTP_PASS }}' \
+              'ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }}' \
+              > "$APP_DIR/server/.env"
 
             # 3. Write client .env (VITE_ vars are build-time only)
-            cat > "$APP_DIR/client/.env" <<'ENVEOF'
-VITE_API_URL=
-VITE_RAZORPAY_KEY_ID=${{ secrets.RAZORPAY_KEY_ID }}
-VITE_APP_NAME=StrikersAcademy
-ENVEOF
+            printf '%s\n' \
+              'VITE_API_URL=' \
+              'VITE_RAZORPAY_KEY_ID=${{ secrets.RAZORPAY_KEY_ID }}' \
+              'VITE_APP_NAME=StrikersAcademy' \
+              > "$APP_DIR/client/.env"
 
             # 4. Set correct permissions
             chmod 600 "$APP_DIR/server/.env"
