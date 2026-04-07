@@ -6,6 +6,7 @@ import { Prisma, PrismaClient } from '@prisma/client';
 
 type TxClient = Prisma.TransactionClient;
 import { PaymentService } from './payment.service';
+import { EmailService } from './email.service';
 import { hashPassword } from '../utils/password';
 
 function httpError(message: string, statusCode: number): never {
@@ -225,7 +226,7 @@ export const AdminService = {
     });
     if (!booking) httpError('Booking not found', 404);
 
-    return prisma.$transaction(async (tx: TxClient) => {
+    const statusResult = await prisma.$transaction(async (tx: TxClient) => {
       const payment = booking!.payment;
 
       // Handle payment status changes — issue Razorpay refund if applicable
@@ -284,6 +285,13 @@ export const AdminService = {
 
       return updated;
     });
+
+    // Send email notification for cancel/refund (async)
+    if (status === 'CANCELLED' || status === 'REFUNDED') {
+      EmailService.sendCancellationEmail(prisma, bookingId).catch(() => {});
+    }
+
+    return statusResult;
   },
 
   /** Mark an offline booking as paid */
